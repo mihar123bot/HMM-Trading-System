@@ -32,7 +32,7 @@ st.set_page_config(
 )
 
 # ── Imports from project modules ────────────────────────────────────────────
-from data_loader import fetch_btc_data
+from data_loader import fetch_asset_data, ASSETS, TICKER_TO_NAME
 from hmm_engine import fit_hmm, predict_regimes, get_state_stats
 from indicators import compute_indicators, get_current_signals, CONFIG as DEFAULT_CONFIG
 from backtester import run_backtest, STARTING_CAPITAL
@@ -100,8 +100,16 @@ st.markdown(
 # Sidebar — live CONFIG editor
 # ──────────────────────────────────────────────────────────────────────────────
 
-def build_sidebar() -> dict:
-    """Render sidebar sliders and return the user-edited CONFIG dict."""
+def build_sidebar() -> tuple[str, dict]:
+    """Render sidebar controls and return (ticker, cfg)."""
+    st.sidebar.markdown("## Asset Selection")
+    asset_name = st.sidebar.selectbox(
+        "Select Asset",
+        options=list(ASSETS.keys()),
+        index=0,
+    )
+    ticker = ASSETS[asset_name]
+    st.sidebar.markdown("---")
     st.sidebar.markdown("## Strategy Parameters")
     st.sidebar.markdown("All changes trigger an instant backtest rerun.")
     st.sidebar.markdown("---")
@@ -132,33 +140,31 @@ def build_sidebar() -> dict:
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Default config is defined in `indicators.py → CONFIG`.")
-    return cfg
+    return ticker, cfg
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Cached data fetch (raw OHLCV only — stays stable)
+# Cached data fetch — keyed by ticker
 # ──────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_raw_data():
-    return fetch_btc_data()
+def fetch_raw_data(ticker: str):
+    return fetch_asset_data(ticker)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fit_hmm_cached(raw_hash: int):
-    """HMM fit is expensive — cache by data hash."""
-    raw = fetch_raw_data()
+def fit_hmm_cached(ticker: str):
+    """HMM fit is expensive — cache by ticker (TTL matches fetch cache)."""
+    raw = fetch_raw_data(ticker)
     model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(raw)
     with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw)
     state_stats = get_state_stats(model, scaler, state_map, feat_df, raw)
     return with_regimes, state_stats
 
 
-def run_pipeline(cfg: dict):
-    """Run indicators + backtest with the given config. Not cached (fast)."""
-    raw = fetch_raw_data()
-    # Use a stable hash of the raw data length as the cache key for HMM
-    with_regimes, state_stats = fit_hmm_cached(len(raw))
+def run_pipeline(ticker: str, cfg: dict):
+    """Run indicators + backtest with the given ticker and config."""
+    with_regimes, state_stats = fit_hmm_cached(ticker)
     full = compute_indicators(with_regimes, cfg=cfg)
     result_df, trades_df, metrics = run_backtest(full)
     current_signals = get_current_signals(full)
@@ -199,7 +205,7 @@ def _regime_shapes(df: pd.DataFrame) -> list:
     return shapes
 
 
-def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict) -> go.Figure:
+def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict, ticker: str = "Asset") -> go.Figure:
     cutoff = df.index[-1] - pd.Timedelta(days=90)
     plot_df = df[df.index >= cutoff].copy()
 
@@ -212,7 +218,7 @@ def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict) -> go.Figu
         row_heights=[0.60, 0.20, 0.20],
         vertical_spacing=0.02,
         subplot_titles=(
-            "BTC-USD — Regime-Shaded Candlestick",
+            f"{ticker} — Regime-Shaded Candlestick",
             f"RSI ({cfg['rsi_period']})",
             "Volume",
         ),
@@ -223,7 +229,7 @@ def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict) -> go.Figu
             x=plot_df.index,
             open=plot_df["Open"], high=plot_df["High"],
             low=plot_df["Low"],   close=plot_df["Close"],
-            name="BTC-USD",
+            name=ticker,
             increasing_line_color="#26a641", decreasing_line_color="#f85149",
             increasing_fillcolor="#26a641",  decreasing_fillcolor="#f85149",
         ),
@@ -342,12 +348,13 @@ def build_equity_chart(result_df: pd.DataFrame) -> go.Figure:
 
 def main():
     # ── Sidebar ──────────────────────────────────────────────────────────────
-    cfg = build_sidebar()
+    ticker, cfg = build_sidebar()
+    asset_name = TICKER_TO_NAME.get(ticker, ticker)
 
     # ── Header ───────────────────────────────────────────────────────────────
     col_title, col_time = st.columns([3, 1])
     with col_title:
-        st.markdown("## HMM Regime-Based BTC Trading System")
+        st.markdown(f"## HMM Regime-Based Trading System — {asset_name}")
         st.markdown(
             '<p class="section-title">Hidden Markov Model · 7 States · '
             f'2.5× Leverage · 48h Cooldown · {cfg["votes_required"]}/8 votes required</p>',
@@ -364,9 +371,9 @@ def main():
     st.markdown("---")
 
     # ── Pipeline ─────────────────────────────────────────────────────────────
-    with st.spinner("Running pipeline…"):
+    with st.spinner(f"Loading {ticker} data · Fitting HMM · Running backtest…"):
         try:
-            result_df, trades_df, metrics, state_stats, current_signals = run_pipeline(cfg)
+            result_df, trades_df, metrics, state_stats, current_signals = run_pipeline(ticker, cfg)
         except Exception as e:
             st.error(f"Pipeline failed: {e}")
             st.exception(e)
@@ -422,13 +429,13 @@ def main():
     st.markdown("---")
 
     # ── Candlestick chart ─────────────────────────────────────────────────────
-    st.markdown("### Price Chart (Last 90 Days) — Regime-Shaded Background")
+    st.markdown(f"### {ticker} Price Chart (Last 90 Days) — Regime-Shaded Background")
     st.markdown(
         '<p class="section-title">'
         '🟢 Green = Bull Run &nbsp;|&nbsp; 🔴 Red = Bear/Crash &nbsp;|&nbsp; ⬛ Grey = Neutral</p>',
         unsafe_allow_html=True,
     )
-    st.plotly_chart(build_chart(result_df, trades_df, cfg), use_container_width=True)
+    st.plotly_chart(build_chart(result_df, trades_df, cfg, ticker), use_container_width=True)
 
     st.markdown("---")
 

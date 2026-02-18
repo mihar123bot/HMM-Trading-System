@@ -1,20 +1,35 @@
 """
 data_loader.py
-Fetches BTC-USD hourly OHLCV data for the last 730 days using yfinance.
+Fetches hourly OHLCV data for any supported asset using yfinance.
 """
 
 import yfinance as yf
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
 
+# ── Supported asset registry ─────────────────────────────────────────────────
+ASSETS: dict[str, str] = {
+    "Bitcoin (BTC-USD)":                              "BTC-USD",
+    "Ethereum (ETH-USD)":                             "ETH-USD",
+    "Solana (SOL-USD)":                               "SOL-USD",
+    "XRP (XRP-USD)":                                  "XRP-USD",
+    "NVIDIA (NVDA)":                                  "NVDA",
+    "Broadcom (AVGO)":                                "AVGO",
+    "Taiwan Semiconductor (TSM)":                     "TSM",
+    "Microsoft (MSFT)":                               "MSFT",
+    "ServiceNow (NOW)":                               "NOW",
+    "Coinbase (COIN)":                                "COIN",
+}
 
-def fetch_btc_data(days: int = 730, interval: str = "1h") -> pd.DataFrame:
+# Reverse lookup: ticker -> display name
+TICKER_TO_NAME: dict[str, str] = {v: k for k, v in ASSETS.items()}
+
+
+def fetch_asset_data(ticker: str, days: int = 730, interval: str = "1h") -> pd.DataFrame:
     """
-    Download BTC-USD OHLCV hourly data.
+    Download OHLCV hourly data for *ticker* covering the last *days* days.
 
-    yfinance limits: hourly data is only available for the last 730 days.
-    We fetch in 60-day chunks to stay within API limits and concatenate.
+    yfinance caps 1h data at ~730 days; fetches in 59-day chunks.
 
     Returns a DataFrame with columns:
         Open, High, Low, Close, Volume
@@ -23,7 +38,6 @@ def fetch_btc_data(days: int = 730, interval: str = "1h") -> pd.DataFrame:
     end = datetime.utcnow()
     start = end - timedelta(days=days)
 
-    # yfinance caps 1h data at ~730 days; fetch in chunks of 59 days
     chunk_size = 59
     frames = []
     chunk_start = start
@@ -31,7 +45,7 @@ def fetch_btc_data(days: int = 730, interval: str = "1h") -> pd.DataFrame:
     while chunk_start < end:
         chunk_end = min(chunk_start + timedelta(days=chunk_size), end)
         df = yf.download(
-            "BTC-USD",
+            ticker,
             start=chunk_start.strftime("%Y-%m-%d"),
             end=chunk_end.strftime("%Y-%m-%d"),
             interval=interval,
@@ -43,21 +57,21 @@ def fetch_btc_data(days: int = 730, interval: str = "1h") -> pd.DataFrame:
         chunk_start = chunk_end
 
     if not frames:
-        raise RuntimeError("yfinance returned no data. Check your internet connection.")
+        raise RuntimeError(
+            f"yfinance returned no data for {ticker}. Check your internet connection."
+        )
 
     data = pd.concat(frames)
     data = data[~data.index.duplicated(keep="first")]
     data.sort_index(inplace=True)
 
-    # Flatten MultiIndex columns if present (yfinance ≥0.2 behavior)
+    # Flatten MultiIndex columns if present (yfinance ≥0.2 behaviour)
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
 
-    # Keep only OHLCV
     data = data[["Open", "High", "Low", "Close", "Volume"]].copy()
     data.dropna(inplace=True)
 
-    # Ensure numeric types
     for col in data.columns:
         data[col] = pd.to_numeric(data[col], errors="coerce")
     data.dropna(inplace=True)
@@ -66,6 +80,9 @@ def fetch_btc_data(days: int = 730, interval: str = "1h") -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    df = fetch_btc_data()
-    print(f"Fetched {len(df)} hourly candles from {df.index[0]} to {df.index[-1]}")
-    print(df.tail())
+    for name, ticker in ASSETS.items():
+        try:
+            df = fetch_asset_data(ticker)
+            print(f"{name}: {len(df)} bars  {df.index[0]} → {df.index[-1]}")
+        except Exception as e:
+            print(f"{name}: ERROR — {e}")
