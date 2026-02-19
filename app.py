@@ -157,14 +157,15 @@ def build_sidebar() -> tuple[str, dict, dict]:
 # Cached data fetch — keyed by ticker
 # ──────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_raw_data(ticker: str):
+    """Fetch OHLCV data. Persisted to disk so app restarts don't re-hit yfinance."""
     return fetch_asset_data(ticker)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fit_hmm_cached(ticker: str):
-    """HMM fit is expensive — cache by ticker (TTL matches fetch cache)."""
+    """Fit HMM and decode regimes. Persisted to disk — most expensive operation."""
     raw = fetch_raw_data(ticker)
     model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(raw)
     with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw)
@@ -172,8 +173,14 @@ def fit_hmm_cached(ticker: str):
     return with_regimes, state_stats
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def run_pipeline(ticker: str, cfg: dict, risk: dict):
-    """Run indicators + backtest with the given ticker, indicator config, and risk config."""
+    """
+    Run indicators + backtest. Cached by (ticker, cfg, risk) so slider changes
+    that produce the same values hit the cache instead of recomputing.
+    TTL=300s (5 min) — short enough to reflect regime changes, long enough to
+    avoid hammering compute on rapid slider drags.
+    """
     with_regimes, state_stats = fit_hmm_cached(ticker)
     full = compute_indicators(with_regimes, cfg=cfg)
     result_df, trades_df, metrics = run_backtest(
