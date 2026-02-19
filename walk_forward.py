@@ -7,7 +7,9 @@ Methodology
 1. Reserve the last `lockbox_pct` of bars as a never-touched Lockbox OOS set.
 2. On the remaining data, run rolling train/test folds:
      - Train  : fit a fresh HMM on the last `train_window_days` of data
+                (all bars with ts <= train_end_ts)
      - Test   : trade the next `test_window_days` using the freshly fitted model
+                (all bars with ts > train_end_ts, i.e. strictly the next bar)
      - Repeat, stepping forward by test_window_days each iteration
 3. Concatenate all test-window equity curves → composite OOS equity curve.
 4. Evaluate the Lockbox using the model from the final training fold.
@@ -15,11 +17,22 @@ Methodology
 
 Boundary guarantee (PDR-D)
 --------------------------
-  fold_train.index[-1] < fold_test.index[0] is asserted at runtime for every fold.
-  No bar appears in both train and test windows.
+  Train split  : ts <= train_end_ts  (iloc [start:train_end])
+  Test split   : ts >  train_end_ts  (iloc [train_end:train_end+test_bars])
+  Assertion    : fold_train.index.max() < fold_test.index.min()
 
-This prevents in-sample overfitting: the Lockbox is only evaluated once,
-at the very end. Sidebar tuning should be done on the WF OOS results only.
+  No bar can appear in both windows because the split is on a strict timestamp
+  inequality. The assertion is runtime-enforced on every fold.
+
+Regime QA
+---------
+  Each fold logs a 'regime_qa' dict with:
+  - state_diagnostics  : per-HMM-state count/%, mean log-return (train)
+  - bull_label_reason  : which state was mapped to Bull and why
+  - pct_time_bull_train: % of train bars in Bull state
+  - pct_time_bull_test : % of test bars in Bull state
+
+  Print with: python walk_forward.py BTC-USD
 """
 
 from __future__ import annotations
@@ -36,6 +49,87 @@ from data_loader import fetch_asset_data
 from hmm_engine import fit_hmm, predict_regimes
 from indicators import compute_indicators
 from backtester import run_backtest, STARTING_CAPITAL
+
+
+def _build_regime_qa(
+    model,
+    scaler,
+    state_map: dict,
+    bull_states: list,   # list of ints — Bull is now a SET of persistent states
+    bear_state: int,
+    train_features: pd.DataFrame,
+    test_features: pd.DataFrame,
+) -> dict:
+    """
+    Compute per-fold Regime QA diagnostics.
+
+    Returns a dict with:
+      bull_states         : list of HMM state ints labelled Bull
+      bear_state          : int HMM state index labelled Bear
+      bull_label_reason   : human-readable explanation of Bull mapping
+      state_diagnostics   : per-state dicts: count, %, mean_ret, std_ret, A_ss
+      pct_time_bull_train : % of train bars in any Bull state
+      pct_time_bull_test  : % of test bars in any Bull state (None if no test)
+    """
+    n_states = model.n_components
+
+    # Decode training window
+    X_train      = scaler.transform(train_features.values)
+    states_train = model.predict(X_train)
+    log_ret_train = train_features["log_return"].values
+    n_train       = len(states_train)
+
+    state_diag = []
+    for s in range(n_states):
+        mask = states_train == s
+        rets = log_ret_train[mask]
+        state_diag.append({
+            "state":              s,
+            "label":              state_map.get(s, "Neutral"),
+            "count_train":        int(mask.sum()),
+            "pct_train":          round(float(mask.mean() * 100), 1),
+            "mean_ret_train_pct": round(float(rets.mean() * 100), 4) if len(rets) > 0 else 0.0,
+            "std_ret_train_pct":  round(float(rets.std()  * 100), 4) if len(rets) > 1 else 0.0,
+            "model_mean_scaled":  round(float(model.means_[s, 0]), 4),
+            "A_ss":               round(float(model.transmat_[s, s]), 3),
+        })
+
+    bull_mask_train = np.isin(states_train, bull_states)
+    pct_bull_train  = round(float(bull_mask_train.mean() * 100), 1)
+
+    # Decode test window
+    pct_bull_test   = None
+    count_bull_test = 0
+    total_test      = 0
+    if test_features is not None and not test_features.empty:
+        X_test      = scaler.transform(test_features.values)
+        states_test = model.predict(X_test)
+        total_test  = len(states_test)
+        count_bull_test = int(np.isin(states_test, bull_states).sum())
+        pct_bull_test = round(float(count_bull_test / total_test * 100), 1) if total_test > 0 else 0.0
+
+    # Human-readable reason line
+    bull_info_strs = []
+    for s in bull_states:
+        sd = state_diag[s]
+        bull_info_strs.append(
+            f"state {s} (occ={sd['pct_train']:.1f}%  "
+            f"mean={sd['mean_ret_train_pct']:+.4f}%  "
+            f"std={sd['std_ret_train_pct']:.4f}%  "
+            f"A_ss={sd['A_ss']:.3f})"
+        )
+    bull_reason = "Bull states: " + " | ".join(bull_info_strs) if bull_info_strs else "Bull states: (none)"
+
+    return {
+        "bull_states":          bull_states,
+        "bear_state":           bear_state,
+        "bull_label_reason":    bull_reason,
+        "state_diagnostics":    state_diag,
+        "pct_time_bull_train":  pct_bull_train,
+        "pct_time_bull_test":   pct_bull_test,
+        "count_bull_test":      count_bull_test,
+        "total_test_bars":      total_test,
+    }
 
 
 def run_walk_forward(
@@ -107,24 +201,32 @@ def run_walk_forward(
     fold_metrics_list: list[dict] = []
     oos_frames: list[pd.DataFrame] = []
 
-    last_model = last_scaler = last_feat_df = last_state_map = last_bull_state = None
+    last_model = last_scaler = last_feat_df = last_state_map = None
+    last_bull_states: list = []
+    last_bear_state: int   = 0
     last_config_hash = ""
     last_exec_rule   = ""
 
     for fold_idx, start in enumerate(fold_starts):
         train_end  = start + train_bars
-        test_end   = min(train_end + test_bars, n_wf)
 
-        fold_train = data_wf.iloc[start:train_end]
-        fold_test  = data_wf.iloc[train_end:test_end]
+        # ── A: Timestamp-based split — train: ts <= train_end_ts ─────────────
+        fold_train    = data_wf.iloc[start:train_end]          # [start, train_end)
+        train_end_ts  = fold_train.index[-1]                   # last train timestamp
+
+        # Test: strictly the next bar onwards (ts > train_end_ts), up to test_bars
+        remaining  = data_wf[data_wf.index > train_end_ts]
+        fold_test  = remaining.iloc[:test_bars]
 
         if len(fold_test) < 24:  # skip tiny tail folds
             continue
 
-        # ── PDR-D: Assert no train/test index overlap ─────────────────────────
-        assert fold_train.index[-1] < fold_test.index[0], (
-            f"Fold {fold_idx + 1}: train end {fold_train.index[-1]} "
-            f">= test start {fold_test.index[0]} — index overlap detected!"
+        # ── PDR-D: Strict timestamp assertion ────────────────────────────────
+        train_idx = fold_train.index
+        test_idx  = fold_test.index
+        assert train_idx.max() < test_idx.min(), (
+            f"Fold {fold_idx + 1}: train end {train_idx.max()} "
+            f">= test start {test_idx.min()} — timestamp boundary violated!"
         )
 
         _progress(
@@ -135,7 +237,7 @@ def run_walk_forward(
 
         # Fit HMM on training window
         try:
-            model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(fold_train)
+            model, scaler, feat_df, state_map, bull_states, bear_state = fit_hmm(fold_train)
         except Exception as e:
             # Skip fold if HMM fails (rare with small windows)
             fold_metrics_list.append({
@@ -149,26 +251,36 @@ def run_walk_forward(
             continue
 
         last_model, last_scaler = model, scaler
-        last_state_map, last_bull_state = state_map, bull_state
+        last_state_map  = state_map
+        last_bull_states = bull_states
+        last_bear_state  = bear_state
+
+        _train_features_for_qa = feat_df  # captured for QA after test features are built
 
         # Predict regimes on test window (need to build features from full fold context)
         try:
-            # Combine enough train context for feature warm-up, then predict on test
-            context = data_wf.iloc[max(0, train_end - 50):test_end]
+            # Combine 50 bars of train tail + all test bars for feature warm-up
             from hmm_engine import _build_features
+            context = pd.concat([fold_train.iloc[-50:], fold_test])
             ctx_features = _build_features(context)
             ctx_features_aligned = ctx_features.loc[ctx_features.index.isin(fold_test.index)]
 
             if ctx_features_aligned.empty:
                 ctx_features_aligned = ctx_features.iloc[-len(fold_test):]
 
-            with_regimes = predict_regimes(model, scaler, ctx_features_aligned, state_map, fold_test, bull_state)
+            with_regimes = predict_regimes(model, scaler, ctx_features_aligned, state_map, fold_test, bull_states)
             last_feat_df = ctx_features_aligned
         except Exception:
             # Fallback: predict directly on test features
             test_features = _build_features(fold_test)
-            with_regimes = predict_regimes(model, scaler, test_features, state_map, fold_test, bull_state)
+            with_regimes = predict_regimes(model, scaler, test_features, state_map, fold_test, bull_states)
             last_feat_df = test_features
+
+        # ── B: Regime QA — now we have both train and test features ──────────
+        regime_qa = _build_regime_qa(
+            model, scaler, state_map, bull_states, bear_state,
+            _train_features_for_qa, last_feat_df,
+        )
 
         # Compute indicators
         with_indicators = compute_indicators(with_regimes, cfg=cfg)
@@ -211,6 +323,9 @@ def run_walk_forward(
             "Train End":              str(fold_train.index[-1].date()),
             "Test Start":             str(fold_test.index[0].date()),
             "Test End":               str(fold_test.index[-1].date()),
+            # Full timestamps for strict boundary verification (dates above can collide same day)
+            "_train_end_ts":          str(fold_train.index[-1]),
+            "_test_start_ts":         str(fold_test.index[0]),
             "Trades":                 metrics["Total Trades"],
             "Total Return (%)":       metrics["Total Return (%)"],
             "Win Rate (%)":           metrics["Win Rate (%)"],
@@ -221,6 +336,7 @@ def run_walk_forward(
             "waterfall":              metrics.get("waterfall", {}),
             "execution_rule_version": metrics.get("execution_rule_version", ""),
             "config_hash":            metrics.get("config_hash", ""),
+            "regime_qa":              regime_qa,
         })
 
     # ── 4. Composite OOS equity ───────────────────────────────────────────────
@@ -247,7 +363,7 @@ def run_walk_forward(
                 lb_feat_test = lb_features.iloc[-n_lockbox:]
 
             lb_regimes = predict_regimes(
-                last_model, last_scaler, lb_feat_test, last_state_map, lb_test, last_bull_state
+                last_model, last_scaler, lb_feat_test, last_state_map, lb_test, last_bull_states
             )
             lb_indicators = compute_indicators(lb_regimes, cfg=cfg)
             _, _, lockbox_metrics = run_backtest(
@@ -372,12 +488,73 @@ if __name__ == "__main__":
     )
 
     print("\n\n=== Fold Summary ===")
+    SKIP = {"attribution", "waterfall", "regime_qa"}
     fold_df = pd.DataFrame([
-        {k: v for k, v in f.items() if k not in ("attribution", "waterfall")}
+        {k: v for k, v in f.items() if k not in SKIP}
         for f in folds
     ])
     if not fold_df.empty:
         print(fold_df.to_string(index=False))
+
+    # ── B: Regime QA — print per fold ─────────────────────────────────────────
+    print("\n=== Regime QA (all folds) ===")
+    for fold in folds:
+        qa = fold.get("regime_qa")
+        if not qa:
+            continue
+        f_num = fold["Fold"]
+        print(
+            f"\n  ── Fold {f_num}  "
+            f"[train {fold['Train Start']} → {fold['Train End']}  |  "
+            f"test {fold['Test Start']} → {fold['Test End']}]"
+        )
+        print(f"  {qa['bull_label_reason']}")
+        print(f"  State distribution (training window):")
+        for sd in qa["state_diagnostics"]:
+            is_bull = sd["state"] in qa.get("bull_states", [])
+            is_bear = sd["state"] == qa["bear_state"]
+            flag    = "  ← BULL" if is_bull else ("  ← BEAR" if is_bear else "")
+            print(
+                f"    State {sd['state']} ({sd['label']:8s}): "
+                f"{sd['count_train']:4d} bars  "
+                f"({sd['pct_train']:5.1f}%)  "
+                f"mean={sd['mean_ret_train_pct']:+.4f}%  "
+                f"std={sd['std_ret_train_pct']:.4f}%  "
+                f"A_ss={sd['A_ss']:.3f}"
+                f"{flag}"
+            )
+        print(f"  % time Bull — train: {qa['pct_time_bull_train']:.1f}%", end="")
+        if qa.get("pct_time_bull_test") is not None:
+            print(
+                f"  |  test: {qa['pct_time_bull_test']:.1f}%"
+                f"  ({qa['count_bull_test']}/{qa['total_test_bars']} bars)"
+            )
+        else:
+            print()
+
+    # ── Boundary verification: confirm Train End < Test Start ─────────────────
+    print("\n=== Boundary Check (Train End vs Test Start — full timestamps) ===")
+    boundary_ok = True
+    for fold in folds:
+        te_ts = fold.get("_train_end_ts", fold.get("Train End", ""))
+        ts_ts = fold.get("_test_start_ts", fold.get("Test Start", ""))
+        # Use pd.Timestamp for strict comparison (handles same-day same-date cases)
+        te_t = pd.Timestamp(te_ts)
+        ts_t = pd.Timestamp(ts_ts)
+        ok   = te_t < ts_t
+        flag = "OK" if ok else "VIOLATION!"
+        if not ok:
+            boundary_ok = False
+        print(
+            f"  Fold {fold['Fold']:2d}:  "
+            f"train_end={te_ts}  "
+            f"test_start={ts_ts}  "
+            f"[{flag}]"
+        )
+    if boundary_ok:
+        print("  All folds: train_end_ts < test_start_ts ✓")
+    else:
+        print("  *** BOUNDARY VIOLATIONS DETECTED ***")
 
     print("\n=== Attribution (last fold) ===")
     if folds and "attribution" in folds[-1]:

@@ -336,8 +336,8 @@ def fetch_raw_data(ticker: str):
 @st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fit_hmm_cached(ticker: str):
     raw = fetch_raw_data(ticker)
-    model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(raw)
-    with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw, bull_state)
+    model, scaler, feat_df, state_map, bull_states, bear_state = fit_hmm(raw)
+    with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw, bull_states)
     state_stats  = get_state_stats(model, scaler, state_map, feat_df, raw)
     return with_regimes, state_stats
 

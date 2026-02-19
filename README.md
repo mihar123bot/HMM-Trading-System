@@ -85,14 +85,28 @@ HMM-Trading-System/
 
 ### `hmm_engine.py`
 
-- Fits a **`hmmlearn.GaussianHMM`** with **7 hidden states** using 200 EM iterations
+- Fits a **`hmmlearn.GaussianHMM`** with **4 hidden states** (K=4) using 200 EM iterations
 - Three training features:
   1. **Log Return** — `log(Close_t / Close_{t-1})`
   2. **Range Ratio** — `(High − Low) / Close` (intrabar volatility proxy)
   3. **Volume Volatility** — 5-bar rolling std of `log(Volume)`
 - All features are z-score scaled (`StandardScaler`) before training
-- **Auto-labelling** by mean log-return: highest → Bull, lowest → Bear, rest → Neutral
-- Viterbi decoding assigns a regime label; forward-backward gives `p_bull` confidence
+
+**Persistent-regime Bull labelling** (replaces the old single `argmax` rule):
+
+| Step | Rule |
+|------|------|
+| **STRESS** | States with occupancy < `MIN_OCC_STRESS` (5%) — rare spike clusters, not tradeable regimes |
+| **Bear** | Non-STRESS state with lowest mean return |
+| **Bull** | Non-STRESS, non-Bear states with `mean_return > 0` (set of 1–3 states) |
+| **Neutral** | Everything else |
+
+- `p_bull = SUM of posteriors across all Bull states` (forward-backward)
+- Viterbi decoding assigns a hard regime label per bar; forward-backward gives `p_bull`
+- `get_state_stats()` returns per-state: Label, Count, Occ (%), Mean Return (%), Std Return (%), **A_ss** (self-transition probability)
+
+**Why K=4 and persistent-regime labelling?**
+With K=7 and `argmax(mean_return)`, the Bull state routinely captured a single extreme-return spike cluster occupying 1–5% of train bars — and was invisible in 14-day OOS test windows (0% Bull on 16/25 folds). With K=4 and the occupancy filter, Bull represents **12–89%** of train bars and is consistently present in test windows (median ~60%), enabling the system to actually trade out-of-sample.
 
 ---
 
@@ -315,7 +329,7 @@ python -m external_data.update --symbol BTCUSDT --overheat_z 2.0 --liquidity_min
 
 - **Data Quality expander** — sanity report (missing rows, zero-volume, outliers, timezone); warns if issues found
 - **Signal pill** — `LONG` (green) or `CASH` (red)
-- **Regime badge** — Bull / Bear / Neutral / Neutral-HighVol
+- **Regime badge** — Bull / Bear / Neutral / Neutral-HighVol / STRESS
 - **Bull Confidence bar** — `p_bull` vs threshold
 - **Bucket scorecard** — live pass/fail for all 4 buckets + individual signals with historical pass rates
 - **Candlestick chart** — regime-shaded background; EMA overlays; entry/exit markers
@@ -394,6 +408,8 @@ python3 walk_forward.py BTC-USD
 
 Runs a rolling walk-forward (180d train / 14d test / 20% lockbox) and saves a JSON snapshot to `wf_results/`.
 
+Prints per-fold **Regime QA** output showing: Bull states + their occupancy / mean return / vol / A_ss, % time Bull in train and test windows, and a boundary check table confirming `train_end_ts < test_start_ts` on every fold.
+
 ---
 
 ## Deploying to Streamlit Community Cloud
@@ -423,6 +439,32 @@ Runs a rolling walk-forward (180d train / 14d test / 20% lockbox) and saves a JS
 ---
 
 ## Changelog
+
+### WF Diagnostics — Regime QA & Persistent Bull Labelling
+
+**Root cause identified and fixed**: With K=7 and `argmax(mean_return)`, Bull was a rare spike cluster (1–5% train occupancy) that appeared in 0% of test bars on 16/25 walk-forward folds, producing 0 trades in 24/25 folds.
+
+- **K=4** (down from 7) — fewer states → each cluster must represent a broader market regime
+- **Persistent-regime labelling** (`_label_states` in `hmm_engine.py`):
+  - `STRESS` label for states with occupancy < 5% (spike/outlier clusters)
+  - `Bull` = **set** of non-STRESS states with `mean_return > 0` (1–3 states per fold)
+  - `p_bull` = sum of posteriors across all Bull states
+  - `bear_state` = non-STRESS state with the lowest mean return
+  - Fallback: if no positive-mean non-STRESS state exists, promote the best remaining state
+- **Result**: Bull occupancy jumps to 12–89% of train bars; test Bull occupancy median ~60%; WF folds with at least 1 trade went from **1/25 → 18/25**
+
+- **Train/test boundary fix** (`walk_forward.py`):
+  - Test split changed from `iloc[train_end:test_end]` to `data_wf[index > train_end_ts].iloc[:test_bars]` — timestamp-based strict inequality
+  - Assertion upgraded to `fold_train.index.max() < fold_test.index.min()` (timestamp level, not date level)
+  - Boundary check now shows full UTC timestamps to detect same-day collisions
+
+- **Per-fold Regime QA** (`_build_regime_qa` in `walk_forward.py`):
+  - Per-state: occupancy %, mean log-return, std log-return, **self-transition A_ss**
+  - Bull label reason (which states, their occupancy and mean return)
+  - % time Bull in both train and test windows
+  - Visible via `python3 walk_forward.py BTC-USD`
+
+---
 
 ### Phase 4 — External Data Ingestion (PDR-H)
 
