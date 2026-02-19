@@ -848,7 +848,7 @@ def main():
         gates_str = " · " + " · ".join(gates_active) if gates_active else ""
         st.markdown(
             '<p class="section-title">Hidden Markov Model · 5 States · '
-            f'Spot Only · 24h Cooldown · Bucket Voting Gate · {exit_mode} Stops{gates_str}</p>',
+            f'Spot Only · 12h Cooldown · Bucket Voting Gate · {exit_mode} Stops{gates_str}</p>',
             unsafe_allow_html=True,
         )
     with col_btn:

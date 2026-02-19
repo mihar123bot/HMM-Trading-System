@@ -6,7 +6,7 @@ Entry Rules
 -----------
   - HMM regime == Bull for at least MIN_REGIME_BARS consecutive bars
   - Bucket voting gate passes (all 4 bucket minimums met)
-  - Not in 24-hour post-exit cooldown
+  - Not in 12-hour post-exit cooldown
   - Not blocked by risk gates (kill switch, market quality, stress cooldown)
 
 Exit Rules (first condition that triggers wins)
@@ -52,7 +52,7 @@ Phase 3 additions
   Stress force-flat (G): exit immediately when stress spike detected
   Tail metrics (L): Sortino, CVaR 95%, max consecutive losses, time-to-recovery
 
-Cooldown  : 24-hour hard lock after ANY exit
+Cooldown  : 12-hour hard lock after ANY exit
 Leverage  : 1× (spot only)
 Capital   : $10,000 starting
 """
@@ -67,7 +67,7 @@ import pandas as pd
 
 STARTING_CAPITAL     = 10_000.0
 LEVERAGE             = 1.0   # spot-only
-COOLDOWN_HOURS       = 24
+COOLDOWN_HOURS       = 12
 EXECUTION_RULE_VER   = "v1_next_open"
 
 # Risk management defaults (overridable via run_backtest kwargs)
