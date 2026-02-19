@@ -154,6 +154,70 @@ def run_data_sanity_checks(df: pd.DataFrame) -> dict:
     }
 
 
+def load_btc_merged_hourly(
+    ticker: str = "BTC-USD",
+    use_external: bool = False,
+    overheat_z_threshold: float = 2.0,
+    liquidity_change_min: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Load the hourly OHLCV dataset for *ticker*, optionally merging pre-built
+    external feature columns from the Parquet store (Phase 4).
+
+    Parameters
+    ----------
+    ticker               : asset ticker (default "BTC-USD")
+    use_external         : if True, attempt to join external features from
+                           data/features/hourly_merged/{ticker}.parquet
+    overheat_z_threshold : |funding_z| threshold for ext_overheat gate
+    liquidity_change_min : stablecoin 30d change % min for ext_low_liquidity gate
+
+    Returns
+    -------
+    pd.DataFrame with OHLCV columns + optionally:
+        funding_rate, funding_z,
+        open_interest, oi_change_1h, oi_z,
+        stablecoin_supply_usd, stablecoin_supply_change_30d,
+        ext_overheat, ext_low_liquidity
+    """
+    raw = fetch_asset_data(ticker)
+
+    if not use_external:
+        return raw
+
+    try:
+        from external_data.storage import PATHS, load as ext_load
+        merged_path = PATHS.merged(ticker)
+        merged_df   = ext_load(merged_path)
+
+        if merged_df.empty:
+            return raw
+
+        # Align index timezones before join
+        if merged_df.index.tz is None:
+            merged_df.index = merged_df.index.tz_localize("UTC")
+        if raw.index.tz is None:
+            raw.index = raw.index.tz_localize("UTC")
+
+        ext_cols = [c for c in merged_df.columns if c not in raw.columns]
+        if not ext_cols:
+            return raw
+
+        result = raw.join(merged_df[ext_cols], how="left")
+        return result
+
+    except ImportError:
+        # pyarrow or external_data not installed — fall back to OHLCV only
+        return raw
+    except Exception as e:
+        import warnings
+        warnings.warn(
+            f"External data merge failed ({e}). Returning OHLCV-only dataset.",
+            stacklevel=2,
+        )
+        return raw
+
+
 if __name__ == "__main__":
     for name, ticker in ASSETS.items():
         try:

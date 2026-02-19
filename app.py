@@ -4,13 +4,14 @@ Streamlit dashboard for the HMM Regime-Based Trading System.
 
 Tabs
 ----
-Main Dashboard    : live signal, chart, metrics, trade log
+Main Dashboard    : live signal, chart, metrics, trade log, tail metrics
 Walk-Forward      : rolling OOS validation + lockbox evaluation
 
 Sidebar
 -------
-Asset Selection → Voting Gate (buckets) → HMM Confidence →
-Risk Management → Execution Costs → Stop Mode →
+Asset Selection → Voting Gate (buckets + per-signal toggles) →
+HMM Confidence → Risk Management → Execution Costs → Stop Mode →
+Phase 3 Risk Gates (kill switch, vol targeting, market quality) →
 Entry Thresholds → Indicator Periods → MACD Settings
 """
 
@@ -131,25 +132,40 @@ def build_sidebar() -> tuple[str, dict, dict]:
     st.sidebar.caption(
         "Signals are split into 4 buckets. ALL bucket minimums must be met to enter."
     )
+
     with st.sidebar.expander("Trend Bucket (EMA Fast + EMA Slow + MACD)", expanded=True):
         cfg["trend_min"] = st.slider(
-            "Min Trend signals (of 3)", 0, 3, DEFAULT_CONFIG["trend_min"], 1,
+            "Min Trend signals (of enabled)", 0, 3, DEFAULT_CONFIG["trend_min"], 1,
             key="trend_min",
         )
+        st.caption("Enable/disable individual trend signals:")
+        cfg["sig_ema_fast_on"] = st.checkbox("EMA Fast",  DEFAULT_CONFIG.get("sig_ema_fast_on", True), key="sig_ema_fast_on")
+        cfg["sig_ema_slow_on"] = st.checkbox("EMA Slow",  DEFAULT_CONFIG.get("sig_ema_slow_on", True), key="sig_ema_slow_on")
+        cfg["sig_macd_on"]     = st.checkbox("MACD > Signal", DEFAULT_CONFIG.get("sig_macd_on", True), key="sig_macd_on")
+
     with st.sidebar.expander("Strength + Participation"):
         cfg["strength_min"] = st.slider(
             "ADX required (0 = skip)", 0, 1, DEFAULT_CONFIG["strength_min"], 1,
             key="strength_min",
         )
+        cfg["sig_adx_on"] = st.checkbox("ADX Signal", DEFAULT_CONFIG.get("sig_adx_on", True), key="sig_adx_on")
+
         cfg["participation_min"] = st.slider(
             "Volume > SMA required (0 = skip)", 0, 1, DEFAULT_CONFIG["participation_min"], 1,
             key="participation_min",
         )
-    with st.sidebar.expander("Risk/Conditioning Bucket (RSI + Volatility + Momentum + Confidence)"):
+        cfg["sig_volume_on"] = st.checkbox("Volume Signal", DEFAULT_CONFIG.get("sig_volume_on", True), key="sig_volume_on")
+
+    with st.sidebar.expander("Risk/Conditioning Bucket"):
         cfg["risk_min"] = st.slider(
-            "Min Risk/Cond signals (of 3–4)", 0, 4, DEFAULT_CONFIG["risk_min"], 1,
+            "Min Risk/Cond signals (of enabled)", 0, 4, DEFAULT_CONFIG["risk_min"], 1,
             key="risk_min",
         )
+        st.caption("Enable/disable individual risk signals:")
+        cfg["sig_rsi_on"]        = st.checkbox("RSI Signal",        DEFAULT_CONFIG.get("sig_rsi_on",        True), key="sig_rsi_on")
+        cfg["sig_volatility_on"] = st.checkbox("Volatility Signal", DEFAULT_CONFIG.get("sig_volatility_on", True), key="sig_volatility_on")
+        cfg["sig_momentum_on"]   = st.checkbox("Momentum Signal",   DEFAULT_CONFIG.get("sig_momentum_on",   True), key="sig_momentum_on")
+        cfg["sig_confidence_on"] = st.checkbox("HMM Confidence",    DEFAULT_CONFIG.get("sig_confidence_on", True), key="sig_confidence_on")
 
     st.sidebar.markdown("---")
 
@@ -158,8 +174,7 @@ def build_sidebar() -> tuple[str, dict, dict]:
     with st.sidebar.expander("Bull State Probability Gate"):
         cfg["p_bull_min"] = st.slider(
             "Min Bull confidence (p_bull ≥)", 0.0, 1.0, float(DEFAULT_CONFIG["p_bull_min"]), 0.05,
-            help="Minimum posterior probability of the Bull HMM state. "
-                 "Higher = more selective entries.",
+            help="Minimum posterior probability of the Bull HMM state.",
             key="p_bull_min",
         )
 
@@ -171,14 +186,14 @@ def build_sidebar() -> tuple[str, dict, dict]:
         "Stop Loss (%)", 0.5, 15.0, 3.0, 0.5,
         help="Exit if price drops this % from entry fill price",
     )
-    risk["stop_loss_pct"]   = -sl_display   # stored as negative for backtester
+    risk["stop_loss_pct"]   = -sl_display
     risk["take_profit_pct"] = st.sidebar.slider(
         "Take Profit (%)", 0.5, 30.0, 4.0, 0.5,
         help="Exit if price rises this % from entry fill price",
     )
     risk["min_regime_bars"] = st.sidebar.slider(
         "Min Bull Regime Bars", 1, 24, 3, 1,
-        help="Bull regime must persist N consecutive bars before entry is allowed",
+        help="Bull regime must persist N consecutive bars before entry",
     )
 
     st.sidebar.markdown("---")
@@ -203,20 +218,71 @@ def build_sidebar() -> tuple[str, dict, dict]:
     risk["use_atr_stops"] = st.sidebar.toggle(
         "Use ATR-Scaled Stops",
         value=False,
-        help="Replace fixed % SL/TP with ATR multiples. "
-             "Makes stops adaptive to market volatility.",
+        help="Replace fixed % SL/TP with ATR multiples.",
     )
     if risk["use_atr_stops"]:
         with st.sidebar.expander("ATR Stop Parameters", expanded=True):
-            risk["k_stop"] = st.slider(
-                "Stop Loss (ATR multiples)", 0.5, 6.0, 2.0, 0.25, key="k_stop",
-            )
-            risk["k_tp"] = st.slider(
-                "Take Profit (ATR multiples)", 0.5, 8.0, 3.0, 0.25, key="k_tp",
-            )
+            risk["k_stop"] = st.slider("Stop Loss (ATR multiples)", 0.5, 6.0, 2.0, 0.25, key="k_stop")
+            risk["k_tp"]   = st.slider("Take Profit (ATR multiples)", 0.5, 8.0, 3.0, 0.25, key="k_tp")
     else:
         risk["k_stop"] = 2.0
         risk["k_tp"]   = 3.0
+
+    st.sidebar.markdown("---")
+
+    # ── Phase 3: Risk Gates ────────────────────────────────────────────────────
+    st.sidebar.markdown("### Risk Gates (Phase 3)")
+
+    with st.sidebar.expander("Kill Switch (Drawdown-Based Halt)"):
+        risk["kill_switch_enabled"] = st.checkbox(
+            "Enable Kill Switch", DEFAULT_CONFIG.get("kill_switch_enabled", False), key="kill_switch_on",
+            help="Halt all trading when rolling drawdown exceeds threshold.",
+        )
+        if risk["kill_switch_enabled"]:
+            risk["kill_switch_dd_pct"]    = st.slider("Max Drawdown Before Halt (%)",   2.0, 30.0, float(DEFAULT_CONFIG.get("kill_switch_dd_pct", 10.0)),    0.5, key="ks_dd")
+            risk["kill_switch_cooldown_h"] = st.slider("Halt Duration (hours)",          6,   168,  int(DEFAULT_CONFIG.get("kill_switch_cooldown_h", 48)),     6,   key="ks_cd")
+        else:
+            risk["kill_switch_dd_pct"]     = 10.0
+            risk["kill_switch_cooldown_h"] = 48
+
+    with st.sidebar.expander("Market Quality / Stress Filter"):
+        risk["use_market_quality_filter"] = st.checkbox(
+            "Block Entries on Stress Spikes", DEFAULT_CONFIG.get("market_quality_filter", False),
+            key="mq_filter",
+            help="Skip entry when (High-Low)/Close exceeds spike threshold.",
+        )
+        risk["stress_force_flat"] = st.checkbox(
+            "Force-Flat on Stress Spike", DEFAULT_CONFIG.get("stress_force_flat", False),
+            key="stress_ff",
+            help="Immediately exit open position when a stress spike is detected.",
+        )
+        risk["stress_range_threshold"] = st.slider(
+            "Stress Spike Threshold (range ratio)", 0.01, 0.15,
+            float(DEFAULT_CONFIG.get("stress_range_threshold", 0.03)), 0.005,
+            key="stress_thresh",
+            help="(High-Low)/Close threshold. Bars above this are 'stress spikes'.",
+        )
+        cfg["stress_range_threshold"] = risk["stress_range_threshold"]
+        risk["stress_cooldown_hours"] = st.slider(
+            "Post-Stress Entry Cooldown (hours)", 0, 72,
+            int(DEFAULT_CONFIG.get("stress_cooldown_hours", 12)), 1,
+            key="stress_cooldown",
+        )
+
+    with st.sidebar.expander("Volatility-Targeted Sizing (Phase 3 J)"):
+        risk["use_vol_targeting"] = st.checkbox(
+            "Enable Vol Targeting", DEFAULT_CONFIG.get("vol_targeting_enabled", False),
+            key="vol_tgt_on",
+            help="Scale position size so realised vol matches a target level.",
+        )
+        if risk["use_vol_targeting"]:
+            risk["vol_target_pct"]      = st.slider("Target Annualised Vol (%)",  5.0, 150.0, float(DEFAULT_CONFIG.get("vol_target_pct",      30.0)), 1.0, key="vol_tgt")
+            risk["vol_target_min_mult"] = st.slider("Min Size Multiplier",        0.1,   1.0, float(DEFAULT_CONFIG.get("vol_target_min_mult", 0.25)),  0.05, key="vol_min")
+            risk["vol_target_max_mult"] = st.slider("Max Size Multiplier",        0.5,   1.0, float(DEFAULT_CONFIG.get("vol_target_max_mult", 1.0)),   0.05, key="vol_max")
+        else:
+            risk["vol_target_pct"]      = 30.0
+            risk["vol_target_min_mult"] = 0.25
+            risk["vol_target_max_mult"] = 1.0
 
     st.sidebar.markdown("---")
 
@@ -224,7 +290,12 @@ def build_sidebar() -> tuple[str, dict, dict]:
     st.sidebar.markdown("### Entry Thresholds")
     cfg["rsi_max"]            = st.sidebar.slider("RSI Max (< threshold)",  50, 100, DEFAULT_CONFIG["rsi_max"], 1)
     cfg["momentum_min_pct"]   = st.sidebar.slider("Min Momentum (%)", 0.0, 10.0, float(DEFAULT_CONFIG["momentum_min_pct"]), 0.1)
-    cfg["volatility_max_pct"] = st.sidebar.slider("Max Volatility (%)", 1.0, 20.0, float(DEFAULT_CONFIG["volatility_max_pct"]), 0.5)
+    # Phase 2 fix: BTC annualised vol is typically 40-100%. Default raised to 80%.
+    cfg["volatility_max_pct"] = st.sidebar.slider(
+        "Max Volatility (%)", 1.0, 150.0, float(DEFAULT_CONFIG["volatility_max_pct"]), 1.0,
+        help="Annualised hourly vol must be below this. BTC typical range: 40–100%. "
+             "The previous default of 6% was too restrictive for crypto.",
+    )
     cfg["adx_min"]            = st.sidebar.slider("Min ADX", 10, 50, DEFAULT_CONFIG["adx_min"], 1)
 
     st.sidebar.markdown("---")
@@ -259,13 +330,11 @@ def build_sidebar() -> tuple[str, dict, dict]:
 
 @st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fetch_raw_data(ticker: str):
-    """Fetch OHLCV data. Persisted to disk so app restarts don't re-hit yfinance."""
     return fetch_asset_data(ticker)
 
 
 @st.cache_data(ttl=3600, show_spinner=False, persist="disk")
 def fit_hmm_cached(ticker: str):
-    """Fit HMM and decode regimes. Persisted to disk — most expensive operation."""
     raw = fetch_raw_data(ticker)
     model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(raw)
     with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw, bull_state)
@@ -275,10 +344,6 @@ def fit_hmm_cached(ticker: str):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def run_pipeline(ticker: str, cfg: dict, risk: dict):
-    """
-    Run indicators + backtest. Cached by (ticker, cfg, risk) so slider changes
-    that produce the same values hit the cache instead of recomputing.
-    """
     raw = fetch_raw_data(ticker)
     sanity_report = run_data_sanity_checks(raw)
 
@@ -286,15 +351,27 @@ def run_pipeline(ticker: str, cfg: dict, risk: dict):
     full = compute_indicators(with_regimes, cfg=cfg)
     result_df, trades_df, metrics = run_backtest(
         full,
-        ticker          = ticker,
-        stop_loss_pct   = risk["stop_loss_pct"],
-        take_profit_pct = risk["take_profit_pct"],
-        min_regime_bars = risk["min_regime_bars"],
-        fee_bps         = risk.get("fee_bps"),
-        slippage_bps    = risk.get("slippage_bps"),
-        use_atr_stops   = risk.get("use_atr_stops", False),
-        k_stop          = risk.get("k_stop", 2.0),
-        k_tp            = risk.get("k_tp",   3.0),
+        ticker                  = ticker,
+        stop_loss_pct           = risk["stop_loss_pct"],
+        take_profit_pct         = risk["take_profit_pct"],
+        min_regime_bars         = risk["min_regime_bars"],
+        fee_bps                 = risk.get("fee_bps"),
+        slippage_bps            = risk.get("slippage_bps"),
+        use_atr_stops           = risk.get("use_atr_stops", False),
+        k_stop                  = risk.get("k_stop", 2.0),
+        k_tp                    = risk.get("k_tp",   3.0),
+        # Phase 3 risk gates
+        use_vol_targeting        = risk.get("use_vol_targeting",       False),
+        vol_target_pct           = risk.get("vol_target_pct",          30.0),
+        vol_target_min_mult      = risk.get("vol_target_min_mult",     0.25),
+        vol_target_max_mult      = risk.get("vol_target_max_mult",     1.0),
+        kill_switch_enabled      = risk.get("kill_switch_enabled",     False),
+        kill_switch_dd_pct       = risk.get("kill_switch_dd_pct",      10.0),
+        kill_switch_cooldown_h   = risk.get("kill_switch_cooldown_h",  48),
+        use_market_quality_filter= risk.get("use_market_quality_filter", False),
+        stress_range_threshold   = risk.get("stress_range_threshold",  0.03),
+        stress_force_flat        = risk.get("stress_force_flat",       False),
+        stress_cooldown_hours    = risk.get("stress_cooldown_hours",   12),
     )
     current_signals = get_current_signals(full)
     return result_df, trades_df, metrics, state_stats, current_signals, sanity_report
@@ -320,15 +397,12 @@ def _regime_shapes(df: pd.DataFrame) -> list:
     for i in range(1, len(df)):
         regime = df["regime"].iloc[i]
         if regime != current_regime or i == len(df) - 1:
-            shapes.append(
-                dict(
-                    type="rect", xref="x", yref="paper",
-                    x0=start_time, x1=df.index[i],
-                    y0=0, y1=1,
-                    fillcolor=REGIME_COLORS.get(current_regime, "rgba(0,0,0,0)"),
-                    line=dict(width=0), layer="below",
-                )
-            )
+            shapes.append(dict(
+                type="rect", xref="x", yref="paper",
+                x0=start_time, x1=df.index[i], y0=0, y1=1,
+                fillcolor=REGIME_COLORS.get(current_regime, "rgba(0,0,0,0)"),
+                line=dict(width=0), layer="below",
+            ))
             current_regime = regime
             start_time = df.index[i]
     return shapes
@@ -353,56 +427,42 @@ def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict, ticker: st
         ),
     )
 
-    fig.add_trace(
-        go.Candlestick(
-            x=plot_df.index,
-            open=plot_df["Open"], high=plot_df["High"],
-            low=plot_df["Low"],   close=plot_df["Close"],
-            name=ticker,
-            increasing_line_color="#26a641", decreasing_line_color="#f85149",
-            increasing_fillcolor="#26a641",  decreasing_fillcolor="#f85149",
-        ),
-        row=1, col=1,
-    )
+    fig.add_trace(go.Candlestick(
+        x=plot_df.index,
+        open=plot_df["Open"], high=plot_df["High"],
+        low=plot_df["Low"],   close=plot_df["Close"],
+        name=ticker,
+        increasing_line_color="#26a641", decreasing_line_color="#f85149",
+        increasing_fillcolor="#26a641",  decreasing_fillcolor="#f85149",
+    ), row=1, col=1)
 
     if ema_fast_col in plot_df.columns:
-        fig.add_trace(
-            go.Scatter(x=plot_df.index, y=plot_df[ema_fast_col],
-                       name=f"EMA {cfg['ema_fast']}",
-                       line=dict(color="#f0a500", width=1), opacity=0.8),
-            row=1, col=1,
-        )
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df[ema_fast_col],
+                                 name=f"EMA {cfg['ema_fast']}",
+                                 line=dict(color="#f0a500", width=1), opacity=0.8), row=1, col=1)
     if ema_slow_col in plot_df.columns:
-        fig.add_trace(
-            go.Scatter(x=plot_df.index, y=plot_df[ema_slow_col],
-                       name=f"EMA {cfg['ema_slow']}",
-                       line=dict(color="#58a6ff", width=1), opacity=0.8),
-            row=1, col=1,
-        )
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df[ema_slow_col],
+                                 name=f"EMA {cfg['ema_slow']}",
+                                 line=dict(color="#58a6ff", width=1), opacity=0.8), row=1, col=1)
 
     if not trades_df.empty:
         entries = trades_df[pd.to_datetime(trades_df["Entry Time"]) >= cutoff]
-        exits   = trades_df[pd.to_datetime(trades_df["Exit Time"]) >= cutoff]
+        exits   = trades_df[pd.to_datetime(trades_df["Exit Time"])  >= cutoff]
         if not entries.empty:
             fig.add_trace(go.Scatter(
                 x=entries["Entry Time"], y=entries["Entry Price"], mode="markers",
                 name="Entry",
                 marker=dict(symbol="triangle-up", size=12, color="#69f0ae",
-                            line=dict(color="#fff", width=1))),
-                row=1, col=1)
+                            line=dict(color="#fff", width=1))), row=1, col=1)
         if not exits.empty:
             fig.add_trace(go.Scatter(
                 x=exits["Exit Time"], y=exits["Exit Price"], mode="markers",
                 name="Exit",
                 marker=dict(symbol="triangle-down", size=12, color="#ff5252",
-                            line=dict(color="#fff", width=1))),
-                row=1, col=1)
+                            line=dict(color="#fff", width=1))), row=1, col=1)
 
-    fig.add_trace(
-        go.Scatter(x=plot_df.index, y=plot_df["rsi"], name="RSI",
-                   line=dict(color="#d2a8ff", width=1)),
-        row=2, col=1,
-    )
+    fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df["rsi"], name="RSI",
+                             line=dict(color="#d2a8ff", width=1)), row=2, col=1)
     fig.add_hline(y=70, line_dash="dot", line_color="rgba(255,82,82,0.5)", row=2, col=1)
     fig.add_hline(y=30, line_dash="dot", line_color="rgba(0,200,83,0.5)",  row=2, col=1)
     fig.add_hline(y=cfg["rsi_max"], line_dash="dot",
@@ -410,18 +470,12 @@ def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict, ticker: st
 
     bar_colors = ["#26a641" if c >= o else "#f85149"
                   for c, o in zip(plot_df["Close"], plot_df["Open"])]
-    fig.add_trace(
-        go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume",
-               marker_color=bar_colors, opacity=0.6),
-        row=3, col=1,
-    )
+    fig.add_trace(go.Bar(x=plot_df.index, y=plot_df["Volume"], name="Volume",
+                         marker_color=bar_colors, opacity=0.6), row=3, col=1)
     if vol_sma_col in plot_df.columns:
-        fig.add_trace(
-            go.Scatter(x=plot_df.index, y=plot_df[vol_sma_col],
-                       name=f"Vol {cfg['volume_sma_period']}-SMA",
-                       line=dict(color="#ffa657", width=1)),
-            row=3, col=1,
-        )
+        fig.add_trace(go.Scatter(x=plot_df.index, y=plot_df[vol_sma_col],
+                                 name=f"Vol {cfg['volume_sma_period']}-SMA",
+                                 line=dict(color="#ffa657", width=1)), row=3, col=1)
 
     fig.update_layout(
         shapes=_regime_shapes(plot_df),
@@ -429,22 +483,17 @@ def build_chart(df: pd.DataFrame, trades_df: pd.DataFrame, cfg: dict, ticker: st
         paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
         height=700,
         margin=dict(l=10, r=10, t=40, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.01,
-                    xanchor="right", x=1, font=dict(size=11)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1, font=dict(size=11)),
         xaxis_rangeslider_visible=False,
-        xaxis3=dict(
-            rangeselector=dict(
-                buttons=[
-                    dict(count=7,  label="7d",  step="day", stepmode="backward"),
-                    dict(count=30, label="30d", step="day", stepmode="backward"),
-                    dict(count=90, label="90d", step="day", stepmode="backward"),
-                    dict(step="all"),
-                ],
-                bgcolor="#161b22", activecolor="#238636",
-                font=dict(color="#e6edf3"),
-            ),
-            type="date",
-        ),
+        xaxis3=dict(rangeselector=dict(
+            buttons=[
+                dict(count=7,  label="7d",  step="day", stepmode="backward"),
+                dict(count=30, label="30d", step="day", stepmode="backward"),
+                dict(count=90, label="90d", step="day", stepmode="backward"),
+                dict(step="all"),
+            ],
+            bgcolor="#161b22", activecolor="#238636", font=dict(color="#e6edf3"),
+        ), type="date"),
     )
     return fig
 
@@ -453,16 +502,13 @@ def build_equity_chart(result_df: pd.DataFrame, title: str = "Equity Curve vs Bu
     close = result_df["Close"]
     bah   = STARTING_CAPITAL * (close / close.iloc[0])
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=result_df.index, y=result_df["equity"], name="Strategy",
-        line=dict(color="#69f0ae", width=2),
-        fill="tozeroy", fillcolor="rgba(105,240,174,0.07)"))
-    fig.add_trace(go.Scatter(
-        x=result_df.index, y=bah, name="Buy & Hold",
-        line=dict(color="#58a6ff", width=1.5, dash="dash")))
+    fig.add_trace(go.Scatter(x=result_df.index, y=result_df["equity"], name="Strategy",
+                             line=dict(color="#69f0ae", width=2),
+                             fill="tozeroy", fillcolor="rgba(105,240,174,0.07)"))
+    fig.add_trace(go.Scatter(x=result_df.index, y=bah, name="Buy & Hold",
+                             line=dict(color="#58a6ff", width=1.5, dash="dash")))
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
+        template="plotly_dark", paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
         height=280, margin=dict(l=10, r=10, t=30, b=10),
         title=dict(text=title, font=dict(size=13)),
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
@@ -489,10 +535,8 @@ def _regime_css_class(regime_detail: str) -> str:
 def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
     st.markdown("### Walk-Forward Validation")
     st.markdown(
-        '<p class="section-title">'
-        "Prevents overfitting by testing on unseen data. "
-        "Tune using WF OOS results — never on the Lockbox."
-        "</p>",
+        '<p class="section-title">Prevents overfitting by testing on unseen data. '
+        "Tune using WF OOS results — never on the Lockbox.</p>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -550,7 +594,6 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
             st.exception(e)
             return
 
-    # ── Display results ───────────────────────────────────────────────────────
     wf = st.session_state.get("wf_results")
     if wf is None:
         st.info(
@@ -589,7 +632,6 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 
     # Per-fold table
     st.markdown("#### Per-Fold Metrics")
-    # Strip nested dicts (attribution/waterfall) before displaying in table
     table_cols = ["Fold", "Train Start", "Train End", "Test Start", "Test End",
                   "Trades", "Total Return (%)", "Win Rate (%)", "Max Drawdown (%)",
                   "Sharpe Ratio", "Total Fees ($)"]
@@ -608,13 +650,12 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
                           "color: #ff5252" if isinstance(v, (int, float)) and v < 0 else "",
                 subset=[c for c in ["Total Return (%)", "Sharpe Ratio"] if c in fold_df.columns],
             ),
-            use_container_width=True,
-            height=300,
+            use_container_width=True, height=300,
         )
 
     st.markdown("---")
 
-    # ── Attribution summary (aggregated across folds) ────────────────────────
+    # Attribution summary
     attr_list = [f.get("attribution", {}) for f in valid_folds if f.get("attribution")]
     if attr_list:
         st.markdown("#### Constraint Attribution (averaged across folds)")
@@ -622,33 +663,39 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
         avg_sig   = np.mean([a.get("pct_time_signal_ok",   0) for a in attr_list])
         avg_elig  = np.mean([a.get("pct_time_eligible",    0) for a in attr_list])
         tot_cd    = sum([a.get("entries_blocked_cooldown",  0) for a in attr_list])
+        tot_gate  = sum([a.get("entries_blocked_gate",      0) for a in attr_list])
+        tot_ext   = sum([a.get("entries_blocked_external",  0) for a in attr_list])
         tot_sl    = sum([a.get("exits_stop_loss",           0) for a in attr_list])
         tot_tp    = sum([a.get("exits_take_profit",         0) for a in attr_list])
         tot_rf    = sum([a.get("exits_regime_flip",         0) for a in attr_list])
+        tot_ff    = sum([a.get("exits_force_flat",          0) for a in attr_list])
+        tot_ks    = sum([a.get("exits_kill_switch",         0) for a in attr_list])
 
-        ac1, ac2, ac3, ac4, ac5, ac6, ac7 = st.columns(7)
+        ac1, ac2, ac3, ac4, ac5, ac6, ac7, ac8, ac9 = st.columns(9)
         for col, label, value, color in [
-            (ac1, "% Time Bull",      f"{avg_bull:.1f}%",  "#69f0ae"),
-            (ac2, "% Signal OK",      f"{avg_sig:.1f}%",   "#58a6ff"),
-            (ac3, "% Eligible",       f"{avg_elig:.1f}%",  "#f0a500"),
-            (ac4, "Blocked Cooldown", tot_cd,               "#ff5252"),
-            (ac5, "SL Exits",         tot_sl,               "#ff5252"),
-            (ac6, "TP Exits",         tot_tp,               "#69f0ae"),
-            (ac7, "Regime Flip",      tot_rf,               "#f0a500"),
+            (ac1, "% Bull",        f"{avg_bull:.1f}%",  "#69f0ae"),
+            (ac2, "% Signal OK",   f"{avg_sig:.1f}%",   "#58a6ff"),
+            (ac3, "% Eligible",    f"{avg_elig:.1f}%",  "#f0a500"),
+            (ac4, "Blk Cooldown",  tot_cd,               "#ff5252"),
+            (ac5, "Blk Gate",      tot_gate,             "#ff5252"),
+            (ac6, "Blk External",  tot_ext,              "#ff5252"),
+            (ac7, "SL Exits",      tot_sl,               "#ff8a80"),
+            (ac8, "TP Exits",      tot_tp,               "#69f0ae"),
+            (ac9, "FF/KS Exits",   tot_ff + tot_ks,      "#ffa657"),
         ]:
             with col:
                 st.markdown(
                     f'<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;'
                     f'padding:8px 12px;text-align:center;">'
-                    f'<div style="color:#8b949e;font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;">{label}</div>'
-                    f'<div style="color:{color};font-size:1.2rem;font-weight:800;">{value}</div>'
+                    f'<div style="color:#8b949e;font-size:0.65rem;text-transform:uppercase;letter-spacing:1px;">{label}</div>'
+                    f'<div style="color:{color};font-size:1.1rem;font-weight:800;">{value}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
     st.markdown("---")
 
-    # ── Eligibility waterfall (last fold or selected fold) ───────────────────
+    # Eligibility waterfall
     wf_list = [f.get("waterfall", {}) for f in valid_folds if f.get("waterfall")]
     if wf_list:
         st.markdown("#### Eligibility Waterfall (last fold)")
@@ -657,8 +704,8 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
             "1_total_bars":    "1. Total Bars",
             "2_bull_regime":   "2. Bull Regime",
             "3_signal_ok":     "3. Signal OK (while Bull)",
-            "4_eligible":      "4. Not in Cooldown + All Gates",
-            "5_not_blocked":   "5. Not Blocked (Phase 1 = same as 4)",
+            "4_eligible":      "4. Eligible (not in cooldown)",
+            "5_not_blocked":   "5. Not Blocked by Gates",
             "6_entries_taken": "6. Entries Taken",
         }
         wf_labels = [step_labels.get(k, k) for k in last_wf]
@@ -666,19 +713,15 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
         total_bars = wf_values[0] if wf_values else 1
 
         wf_fig = go.Figure(go.Bar(
-            x=wf_values,
-            y=wf_labels,
-            orientation="h",
+            x=wf_values, y=wf_labels, orientation="h",
             marker_color=["#58a6ff", "#69f0ae", "#f0a500", "#d2a8ff", "#ffa657", "#ff5252"],
             text=[f"{v:,}  ({v/max(total_bars,1)*100:.1f}%)" for v in wf_values],
             textposition="outside",
         ))
         wf_fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
+            template="plotly_dark", paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
             height=320, margin=dict(l=10, r=80, t=20, b=10),
-            xaxis_title="Bars",
-            yaxis=dict(autorange="reversed"),
+            xaxis_title="Bars", yaxis=dict(autorange="reversed"),
         )
         st.plotly_chart(wf_fig, use_container_width=True)
 
@@ -691,7 +734,6 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 
     st.markdown("---")
 
-    # OOS equity curve
     if not oos_df.empty and "equity" in oos_df.columns:
         st.markdown("#### OOS Equity Curve (All Test Windows Concatenated)")
         st.plotly_chart(build_equity_chart(oos_df, "OOS Equity vs Buy & Hold"), use_container_width=True)
@@ -723,11 +765,11 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 
     # JSON download
     snapshot_data = {
-        "ticker":       wf["ticker"],
-        "train_window": wf["train_window"],
-        "test_window":  wf["test_window"],
-        "lockbox_pct":  wf["lockbox_pct"],
-        "fold_metrics": fold_metrics,
+        "ticker":          wf["ticker"],
+        "train_window":    wf["train_window"],
+        "test_window":     wf["test_window"],
+        "lockbox_pct":     wf["lockbox_pct"],
+        "fold_metrics":    fold_metrics,
         "lockbox_metrics": lb_metrics,
     }
     st.download_button(
@@ -743,18 +785,21 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    # ── Sidebar ──────────────────────────────────────────────────────────────
     ticker, cfg, risk = build_sidebar()
     asset_name = TICKER_TO_NAME.get(ticker, ticker)
 
-    # ── Header ───────────────────────────────────────────────────────────────
     col_title, col_btn, col_time = st.columns([3, 1, 1])
     with col_title:
         st.markdown(f"## HMM Regime-Based Trading System — {asset_name}")
-        exit_mode = "ATR-Scaled" if risk.get("use_atr_stops") else "Fixed %"
+        exit_mode  = "ATR-Scaled" if risk.get("use_atr_stops") else "Fixed %"
+        gates_active = []
+        if risk.get("kill_switch_enabled"):    gates_active.append("Kill Switch")
+        if risk.get("use_market_quality_filter"): gates_active.append("MQ Filter")
+        if risk.get("use_vol_targeting"):      gates_active.append("Vol Target")
+        gates_str = " · " + " · ".join(gates_active) if gates_active else ""
         st.markdown(
             '<p class="section-title">Hidden Markov Model · 7 States · '
-            f'Spot Only · 48h Cooldown · Bucket Voting Gate · {exit_mode} Stops</p>',
+            f'Spot Only · 48h Cooldown · Bucket Voting Gate · {exit_mode} Stops{gates_str}</p>',
             unsafe_allow_html=True,
         )
     with col_btn:
@@ -772,10 +817,8 @@ def main():
 
     st.markdown("---")
 
-    # ── Tabs ─────────────────────────────────────────────────────────────────
     tab_main, tab_wf = st.tabs(["Main Dashboard", "Walk-Forward Analysis"])
 
-    # ── Pipeline ─────────────────────────────────────────────────────────────
     with st.spinner(f"Loading {ticker} data · Fitting HMM · Running backtest…"):
         try:
             result_df, trades_df, metrics, state_stats, current_signals, sanity_report = run_pipeline(
@@ -791,7 +834,7 @@ def main():
     # ─────────────────────────────────────────────────────────────────────────
     with tab_main:
 
-        # ── Data sanity report ────────────────────────────────────────────────
+        # Data sanity
         issues = sanity_report.get("issues", [])
         with st.expander(
             f"{'⚠️ Data Quality Warnings' if issues else '✅ Data Quality'} "
@@ -816,7 +859,7 @@ def main():
 
         st.markdown("---")
 
-        # ── Current regime & signal ──────────────────────────────────────────
+        # Current regime & signal
         current_regime = result_df["regime"].iloc[-1]
         regime_detail  = result_df.get("regime_detail", result_df["regime"]).iloc[-1]
         vote_count     = int(result_df["vote_count"].iloc[-1])
@@ -827,40 +870,36 @@ def main():
         signal_cls   = "signal-long" if is_long else "signal-cash"
         regime_cls   = _regime_css_class(regime_detail)
 
-        # p_bull display
         p_bull_val  = current_signals.get("p_bull")
         signals_map = current_signals.get("signals", {})
         buckets_map = current_signals.get("buckets", {})
+        pass_rates  = current_signals.get("pass_rates", {})
 
         col_sig, col_reg, col_conf = st.columns([1.2, 1.5, 2])
-
         with col_sig:
             st.markdown('<p class="section-title">Current Signal</p>', unsafe_allow_html=True)
             st.markdown(f'<span class="{signal_cls}">{signal_label}</span>', unsafe_allow_html=True)
-
         with col_reg:
             st.markdown('<p class="section-title">Detected Regime</p>', unsafe_allow_html=True)
             st.markdown(f'<span class="{regime_cls}">{regime_detail}</span>', unsafe_allow_html=True)
-
         with col_conf:
             if p_bull_val is not None:
                 st.markdown('<p class="section-title">Bull Confidence (p_bull)</p>', unsafe_allow_html=True)
-                conf_pct = int(p_bull_val * 100)
                 conf_color = "#69f0ae" if p_bull_val >= cfg.get("p_bull_min", 0.55) else "#ff5252"
                 st.markdown(
                     f'<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;'
                     f'padding:8px 14px;">'
                     f'<span style="color:{conf_color};font-size:1.3rem;font-weight:800;">{p_bull_val:.3f}</span>'
                     f'<span style="color:#8b949e;font-size:0.8rem;margin-left:8px;">'
-                    f'({conf_pct}% confidence · threshold {int(cfg.get("p_bull_min",0.55)*100)}%)</span>'
+                    f'({int(p_bull_val*100)}% confidence · threshold {int(cfg.get("p_bull_min",0.55)*100)}%)</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # ── Bucket scorecard ─────────────────────────────────────────────────
-        gate_ok   = signal_ok
+        # Bucket scorecard
+        gate_ok    = signal_ok
         gate_color = "#69f0ae" if gate_ok else "#ff5252"
         gate_label = "✅ ENTRY GATE OPEN" if gate_ok else "❌ ENTRY GATE CLOSED"
         st.markdown(
@@ -873,9 +912,10 @@ def main():
             bucket_cols = st.columns(4)
             bucket_icons = {"Trend": "📈", "Strength": "💪", "Participation": "📊", "Risk/Cond.": "🛡️"}
             for col_i, (bucket_name, (score, max_score, required)) in enumerate(buckets_map.items()):
-                passed     = score >= required
-                b_color    = "#69f0ae" if passed else "#ff5252"
-                b_icon     = "✅" if passed else "❌"
+                effective_min = min(required, max_score) if max_score > 0 else 0
+                passed    = score >= effective_min if max_score > 0 else True
+                b_color   = "#69f0ae" if passed else "#ff5252"
+                b_icon    = "✅" if passed else "❌"
                 icon_label = bucket_icons.get(bucket_name, "")
                 with bucket_cols[col_i]:
                     st.markdown(
@@ -884,30 +924,34 @@ def main():
                         f'{icon_label} {bucket_name}</div>'
                         f'<div style="color:{b_color};font-size:1.6rem;font-weight:800;">'
                         f'{b_icon} {score}/{max_score}</div>'
-                        f'<div style="color:#8b949e;font-size:0.75rem;">need ≥ {required}</div>'
+                        f'<div style="color:#8b949e;font-size:0.75rem;">need ≥ {effective_min}'
+                        + (' (auto-pass)' if max_score == 0 else '') + '</div>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
 
-        # Individual signals
-        st.markdown('<p class="section-title" style="margin-top:12px;">Individual Signals</p>', unsafe_allow_html=True)
+        # Individual signals with historical pass rates
+        st.markdown('<p class="section-title" style="margin-top:12px;">Individual Signals '
+                    '(value · historical pass rate)</p>', unsafe_allow_html=True)
         sig_cols = st.columns(5)
         for idx, (name, (passed, value)) in enumerate(signals_map.items()):
-            icon  = "✅" if passed else "❌"
-            color = "#69f0ae" if passed else "#ff5252"
+            icon    = "✅" if passed else "❌"
+            color   = "#69f0ae" if passed else "#ff5252"
+            rate    = pass_rates.get(name)
+            rate_str = f" · {rate:.0f}% hist" if rate is not None else ""
             with sig_cols[idx % 5]:
                 st.markdown(
                     f'<div style="background:#161b22;border:1px solid #30363d;'
                     f'border-radius:8px;padding:7px 10px;margin-bottom:6px;">'
                     f'<span style="color:{color};font-weight:700;font-size:0.8rem;">{icon} {name}</span><br>'
-                    f'<span style="color:#8b949e;font-size:0.75rem;">{value}</span>'
+                    f'<span style="color:#8b949e;font-size:0.75rem;">{value}{rate_str}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
         st.markdown("---")
 
-        # ── Candlestick chart ─────────────────────────────────────────────────
+        # Candlestick chart
         st.markdown(f"### {ticker} Price Chart (Last 90 Days) — Regime-Shaded Background")
         st.markdown(
             '<p class="section-title">'
@@ -918,10 +962,9 @@ def main():
 
         st.markdown("---")
 
-        # ── Performance metrics ───────────────────────────────────────────────
+        # Performance metrics
         st.markdown("### Performance Metrics")
         m1, m2, m3, m4, m5, m6 = st.columns(6)
-        sl_display = abs(risk["stop_loss_pct"])
         for col, label, value, help_text in [
             (m1, "Total Return",  f"{metrics['Total Return (%)']:+.2f}%",   f"Start: ${STARTING_CAPITAL:,.0f}"),
             (m2, "Alpha vs B&H",  f"{metrics['Alpha (%)']:+.2f}%",          f"B&H: {metrics['Buy & Hold Return (%)']:+.2f}%"),
@@ -933,11 +976,33 @@ def main():
             with col:
                 st.metric(label=label, value=value, help=help_text)
 
-        # ── Exit breakdown ────────────────────────────────────────────────────
+        # Phase 3 L: Tail metrics row
+        st.markdown('<p class="section-title" style="margin-top:12px;">Tail Risk Metrics (Phase 3)</p>',
+                    unsafe_allow_html=True)
+        t1, t2, t3, t4, t5, t6 = st.columns(6)
+        for col, label, value, color in [
+            (t1, "Sortino Ratio",         f"{metrics.get('Sortino Ratio', 0):.3f}",         "#69f0ae"),
+            (t2, "CVaR 95% (ann %)",      f"{metrics.get('CVaR 95% (ann %)', 0):.2f}%",     "#ff5252"),
+            (t3, "Max Consec Losses",     metrics.get("Max Consec Losses", 0),               "#ff5252"),
+            (t4, "Worst Decile Trade",    f"{metrics.get('Worst Decile Trade (%)', 0):.2f}%","#ffa657"),
+            (t5, "Large Loss Trades",     metrics.get("Large Loss Trades", 0),               "#ff5252"),
+            (t6, "Time to Recovery (h)",  metrics.get("Time-to-Recovery (h)", "N/A"),        "#8b949e"),
+        ]:
+            with col:
+                st.markdown(
+                    f'<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;'
+                    f'padding:10px 14px;text-align:center;">'
+                    f'<div style="color:#8b949e;font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;">{label}</div>'
+                    f'<div style="color:{color};font-size:1.1rem;font-weight:800;">{value}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # Exit breakdown
         e1, e2, e3, e4, e5, e6 = st.columns(6)
         stop_mode_label = metrics.get("Exit Mode", "Fixed %")
-        exec_ver    = metrics.get("execution_rule_version", "–")
-        cfg_hash    = metrics.get("config_hash", "–")
+        exec_ver  = metrics.get("execution_rule_version", "–")
+        cfg_hash  = metrics.get("config_hash", "–")
         for col, label, value, color in [
             (e1, "Stop Loss Exits",    metrics["Stop Loss Exits"],   "#ff5252"),
             (e2, "Take Profit Exits",  metrics["Take Profit Exits"], "#69f0ae"),
@@ -959,12 +1024,10 @@ def main():
 
         st.markdown("---")
 
-        # ── Equity curve ──────────────────────────────────────────────────────
         st.plotly_chart(build_equity_chart(result_df), use_container_width=True)
-
         st.markdown("---")
 
-        # ── Trade log + HMM state table ──────────────────────────────────────
+        # Trade log + HMM state table
         col_trades, col_states = st.columns([3, 2])
 
         with col_trades:
@@ -976,22 +1039,21 @@ def main():
                 disp["Entry Time"] = pd.to_datetime(disp["Entry Time"]).dt.strftime("%Y-%m-%d %H:%M")
                 disp["Exit Time"]  = pd.to_datetime(disp["Exit Time"]).dt.strftime("%Y-%m-%d %H:%M")
 
-                # Map Sanity Pass bool to emoji for readability
                 if "Sanity Pass" in disp.columns:
                     disp["Sanity ✓"] = disp["Sanity Pass"].map({True: "✓", False: "✗"})
 
-                # Show key columns including new cost breakdown
                 preferred_cols = [
                     "Entry Time", "Exit Time", "Entry Price", "Exit Price",
                     "Return (%)", "PnL ($)",
                     "Fee Entry ($)", "Fee Exit ($)",
                     "Slippage Entry ($)", "Slippage Exit ($)",
-                    "Total Cost ($)", "Notional ($)", "Sanity ✓",
+                    "Total Cost ($)", "Notional ($)", "Size Mult", "Sanity ✓",
                     "Exit Reason", "Equity After ($)",
                 ]
-                # Fall back to basic columns if cost breakdown absent (old data)
-                fallback_cols = ["Entry Time", "Exit Time", "Entry Price", "Exit Price",
-                                 "Return (%)", "PnL ($)", "Fee ($)", "Exit Reason", "Equity After ($)"]
+                fallback_cols = [
+                    "Entry Time", "Exit Time", "Entry Price", "Exit Price",
+                    "Return (%)", "PnL ($)", "Fee ($)", "Exit Reason", "Equity After ($)",
+                ]
                 has_cost_detail = "Fee Entry ($)" in disp.columns
                 display_cols = preferred_cols if has_cost_detail else fallback_cols
                 display_cols = [c for c in display_cols if c in disp.columns]
@@ -1013,6 +1075,7 @@ def main():
                     "Slippage Exit ($)":  "${:.2f}",
                     "Total Cost ($)":     "${:.2f}",
                     "Notional ($)":       "${:,.0f}",
+                    "Size Mult":          "{:.3f}",
                 }
                 fmt = {k: v for k, v in fmt.items() if k in disp.columns}
 
@@ -1037,11 +1100,9 @@ def main():
                     "Mean Return (%)": "{:+.4f}%",
                     "Std Return (%)":  "{:.4f}%",
                 }),
-                use_container_width=True,
-                height=340,
+                use_container_width=True, height=340,
             )
 
-        # ── Footer ────────────────────────────────────────────────────────────
         st.markdown("---")
         st.markdown(
             '<p style="color:#484f58;font-size:0.75rem;text-align:center;">'
