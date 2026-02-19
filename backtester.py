@@ -96,7 +96,8 @@ DEFAULT_COSTS = {"fee_bps": 5, "slippage_bps": 3}
 def _make_config_hash(stop_loss_pct, take_profit_pct, min_regime_bars,
                       fee_bps, slippage_bps,
                       use_trailing_stop=False, trailing_stop_pct=2.0,
-                      regime_flip_grace_bars=0) -> str:
+                      trail_atr_mult=1.25, trail_activation_pct=1.5,
+                      regime_flip_grace_bars=0, use_pbull_sizing=False) -> str:
     payload = json.dumps({
         "stop_loss_pct":          stop_loss_pct,
         "take_profit_pct":        take_profit_pct,
@@ -105,7 +106,10 @@ def _make_config_hash(stop_loss_pct, take_profit_pct, min_regime_bars,
         "slippage_bps":           slippage_bps,
         "use_trailing_stop":      use_trailing_stop,
         "trailing_stop_pct":      trailing_stop_pct,
+        "trail_atr_mult":         trail_atr_mult,
+        "trail_activation_pct":   trail_activation_pct,
         "regime_flip_grace_bars": regime_flip_grace_bars,
+        "use_pbull_sizing":       use_pbull_sizing,
     }, sort_keys=True)
     return hashlib.md5(payload.encode()).hexdigest()[:8]
 
@@ -124,10 +128,14 @@ def run_backtest(
     k_stop:           float = 2.0,
     k_tp:             float = 3.0,
     # Trailing stop
-    use_trailing_stop:   bool  = False,
-    trailing_stop_pct:   float = 2.0,
+    use_trailing_stop:    bool  = False,
+    trailing_stop_pct:    float = 2.0,   # fixed-% fallback distance (when no ATR)
+    trail_atr_mult:       float = 1.25,  # ATR multiples for trailing stop level
+    trail_activation_pct: float = 1.5,   # only activate trailing stop after this % gain
     # Regime-flip grace period
     regime_flip_grace_bars: int = 0,
+    # p_bull position sizing (E)
+    use_pbull_sizing:     bool  = False,
     # Phase 3 J — vol targeting
     use_vol_targeting:  bool  = False,
     vol_target_pct:     float = 30.0,
@@ -159,11 +167,16 @@ def run_backtest(
     slippage_bps      : slippage (basis points per side); None = auto from ticker
     use_atr_stops     : if True, use ATR-scaled SL/TP
     k_stop / k_tp     : ATR multiples for SL / TP
-    use_trailing_stop : if True, trail the SL at trailing_stop_pct% below the
-                        highest close since entry (works alongside TP and regime flip)
-    trailing_stop_pct : distance from trade high to trailing stop level (%)
+    use_trailing_stop    : if True, trail the SL below the highest close since entry.
+                           Level = trade_high − trail_atr_mult × ATR (when ATR available)
+                           or trade_high × (1 − trailing_stop_pct/100) as fallback.
+                           Only activates once the trade is up >= trail_activation_pct %.
+    trailing_stop_pct    : fixed-% fallback trailing distance (when ATR not available)
+    trail_atr_mult       : ATR multiples for the ATR-based trailing stop level
+    trail_activation_pct : gain % required before the trailing stop arms itself
     regime_flip_grace_bars : allow up to N non-Bull bars before regime-flip exit fires
                              (0 = exit on first non-Bull bar, matching prior behaviour)
+    use_pbull_sizing     : if True, scale position size by p_bull (e.g. p_bull=0.85 → 85% size)
     use_vol_targeting : (Phase 3 J) scale position by vol_target_pct / realized_vol
     vol_target_pct    : target annualised vol % for sizing
     vol_target_min/max_mult : clamp bounds for size multiplier
@@ -203,7 +216,8 @@ def run_backtest(
 
     config_hash = _make_config_hash(
         stop_loss_pct, take_profit_pct, min_regime_bars, _fee_bps, _slippage_bps,
-        use_trailing_stop, trailing_stop_pct, regime_flip_grace_bars,
+        use_trailing_stop, trailing_stop_pct, trail_atr_mult, trail_activation_pct,
+        regime_flip_grace_bars, use_pbull_sizing,
     )
 
     n = len(df)
@@ -257,6 +271,7 @@ def run_backtest(
     # Trailing stop and regime-flip grace state
     trade_high         = 0.0   # highest close since entry (for trailing stop)
     bear_streak_trade  = 0     # consecutive non-Bull bars while in trade (for grace period)
+    trailing_activated = False  # True once trade gains >= trail_activation_pct %
     trailing_sl_factor = trailing_stop_pct / 100.0
 
     for i in range(1, n):
@@ -392,6 +407,10 @@ def run_backtest(
             else:
                 pos_size_mult = 1.0
 
+            # E: p_bull-based position scaling — higher confidence → larger position
+            if use_pbull_sizing and has_p_bull:
+                pos_size_mult = float(np.clip(pos_size_mult * p_bull_i, 0.05, 1.0))
+
             entry_open   = open_i
             entry_fill   = entry_open * (1 + slip_factor)
             entry_time   = ts
@@ -402,8 +421,11 @@ def run_backtest(
             entry_price       = entry_open
             trade_high        = entry_fill   # reset trailing stop high water mark
             bear_streak_trade = 0            # reset grace period counter
+            trailing_activated = False       # reset trailing stop activation
 
-            if _use_atr and "atr" in prev_row.index:
+            # Always capture ATR at entry — used for ATR-based trailing stop
+            # even when use_atr_stops = False
+            if has_atr and "atr" in prev_row.index:
                 atr_val = prev_row["atr"]
                 atr_at_entry = float(atr_val) if not np.isnan(atr_val) else 0.0
             else:
@@ -425,8 +447,20 @@ def run_backtest(
                 bear_streak_trade = 0
             else:
                 bear_streak_trade += 1
+            # Arm trailing stop once the trade is sufficiently in profit
+            if use_trailing_stop and not trailing_activated and entry_fill > 0:
+                if (close_i - entry_fill) / entry_fill >= trail_activation_pct / 100.0:
+                    trailing_activated = True
 
         # ── Step 2: Check exit conditions for current bar ──────────────────
+        # ATR-based trailing level (armed only after trail_activation_pct gain)
+        _trail_hit = False
+        if use_trailing_stop and trailing_activated:
+            if atr_at_entry > 0:
+                _trail_hit = close_i <= trade_high - trail_atr_mult * atr_at_entry
+            else:
+                _trail_hit = close_i <= trade_high * (1 - trailing_sl_factor)
+
         if in_trade and not pending_exit:
             # Phase 3 G: stress force-flat (highest priority)
             if stress_force_flat and is_stress_bar:
@@ -438,7 +472,7 @@ def run_backtest(
             elif _use_atr:
                 if close_i <= sl_price:
                     pending_exit = True; pending_exit_reason = "Stop Loss"
-                elif use_trailing_stop and close_i <= trade_high * (1 - trailing_sl_factor):
+                elif _trail_hit:
                     pending_exit = True; pending_exit_reason = "Trailing Stop"
                 elif close_i >= tp_price:
                     pending_exit = True; pending_exit_reason = "Take Profit"
@@ -448,7 +482,7 @@ def run_backtest(
                 price_ret_check = (close_i - entry_fill) / entry_fill
                 if price_ret_check <= sl_factor:
                     pending_exit = True; pending_exit_reason = "Stop Loss"
-                elif use_trailing_stop and close_i <= trade_high * (1 - trailing_sl_factor):
+                elif _trail_hit:
                     pending_exit = True; pending_exit_reason = "Trailing Stop"
                 elif price_ret_check >= tp_factor:
                     pending_exit = True; pending_exit_reason = "Take Profit"

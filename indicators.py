@@ -40,17 +40,19 @@ import pandas as pd
 
 CONFIG: dict = {
     # ── Periods ──────────────────────────────────────────────────────────────
-    "rsi_period":         14,
-    "momentum_period":    5,
-    "volume_sma_period":  10,
-    "volatility_period":  24,   # hours; annualised via ×√8760
-    "adx_period":         14,
-    "atr_period":         14,   # Wilder ATR period
-    "ema_fast":           20,
-    "ema_slow":           50,
-    "macd_fast":          12,
-    "macd_slow":          26,
-    "macd_signal":        9,
+    "rsi_period":           14,
+    "momentum_period":       5,
+    "volume_sma_period":    10,
+    "volatility_period":    24,   # hours; annualised via ×√8760
+    "adx_period":           14,
+    "atr_period":           14,   # Wilder ATR period
+    "ema_fast":             20,
+    "ema_slow":             50,
+    "macd_fast":            12,
+    "macd_slow":            26,
+    "macd_signal":           9,
+    "roc_period":            8,   # rate-of-change lookback (bars) — faster than EMA
+    "p_bull_slope_period":   3,   # p_bull slope lookback (bars) — HMM confidence trend
 
     # ── Thresholds (entry conditions) ────────────────────────────────────────
     "rsi_max":            90,    # RSI < rsi_max
@@ -63,15 +65,17 @@ CONFIG: dict = {
 
     # ── Per-signal enable/disable (Phase 2) ───────────────────────────────────
     # Set to False to exclude a signal from its bucket (and reduce bucket max by 1).
-    "sig_rsi_on":         True,
-    "sig_momentum_on":    True,
-    "sig_volume_on":      True,
-    "sig_volatility_on":  True,
-    "sig_adx_on":         True,
-    "sig_ema_fast_on":    True,
-    "sig_ema_slow_on":    True,
-    "sig_macd_on":        True,
-    "sig_confidence_on":  True,
+    "sig_rsi_on":           True,
+    "sig_momentum_on":      True,
+    "sig_volume_on":        True,
+    "sig_volatility_on":    True,
+    "sig_adx_on":           True,
+    "sig_ema_fast_on":      True,
+    "sig_ema_slow_on":      True,
+    "sig_macd_on":          True,
+    "sig_confidence_on":    True,
+    "sig_roc_on":           True,   # rate-of-change > 0 over roc_period bars
+    "sig_pbull_slope_on":   True,   # p_bull increasing over p_bull_slope_period bars
 
     # ── Bucket voting ─────────────────────────────────────────────────────────
     "trend_min":          1,     # of 3 (ema_fast, ema_slow, macd)
@@ -231,6 +235,15 @@ def compute_indicators(data: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
     # Phase 3: range_1h = (High-Low)/Close (intrabar range ratio)
     df["range_1h"] = (high - low) / close.replace(0, np.nan)
 
+    # Fast momentum: rate of change over roc_period bars
+    df["roc_pct"] = (close / close.shift(c["roc_period"]) - 1) * 100
+
+    # HMM confidence slope: p_bull increasing over p_bull_slope_period bars
+    if "p_bull" in df.columns:
+        df["p_bull_slope"] = df["p_bull"] - df["p_bull"].shift(c["p_bull_slope_period"])
+    else:
+        df["p_bull_slope"] = 0.0
+
     # ── Boolean signals ──────────────────────────────────────────────────────
     df["sig_rsi"]        = df["rsi"] < c["rsi_max"]
     df["sig_momentum"]   = df["momentum_pct"] > c["momentum_min_pct"]
@@ -247,16 +260,24 @@ def compute_indicators(data: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
     else:
         df["sig_confidence"] = True
 
+    # Rate-of-change signal: positive ROC over roc_period bars
+    df["sig_roc"] = df["roc_pct"] > 0
+
+    # p_bull slope signal: HMM confidence is increasing
+    df["sig_p_bull_slope"] = df["p_bull_slope"] > 0
+
     # Phase 3: stress spike flag
     df["stress_spike"] = df["range_1h"] >= c.get("stress_range_threshold", 0.03)
 
     # ── Phase 2: Dynamic bucket scores respecting enable/disable flags ────────
 
-    # Trend bucket
+    # Trend bucket — includes fast alternatives (ROC, p_bull slope) alongside EMA/MACD
     trend_signal_map = [
-        ("sig_ema_fast", "sig_ema_fast_on"),
-        ("sig_ema_slow", "sig_ema_slow_on"),
-        ("sig_macd",     "sig_macd_on"),
+        ("sig_ema_fast",     "sig_ema_fast_on"),
+        ("sig_ema_slow",     "sig_ema_slow_on"),
+        ("sig_macd",         "sig_macd_on"),
+        ("sig_roc",          "sig_roc_on"),
+        ("sig_p_bull_slope", "sig_pbull_slope_on"),
     ]
     trend_active = [col for col, key in trend_signal_map if c.get(key, True)]
     trend_max    = len(trend_active)
@@ -368,6 +389,11 @@ def get_current_signals(df: pd.DataFrame) -> dict:
         signals["MACD > Signal"] = (bool(last["sig_macd"]), round(float(last["macd_line"]), 4))
     if has_confidence and c.get("sig_confidence_on", True):
         signals[f"HMM Confidence ≥ {c['p_bull_min']}"] = (bool(last["sig_confidence"]), round(float(last["p_bull"]), 3))
+    if c.get("sig_roc_on", True):
+        signals[f"ROC({c['roc_period']}b) > 0"] = (bool(last["sig_roc"]), round(float(last["roc_pct"]), 3))
+    if c.get("sig_pbull_slope_on", True):
+        slope_val = round(float(last["p_bull_slope"]), 4) if "p_bull_slope" in last.index else 0.0
+        signals[f"p_bull Slope({c['p_bull_slope_period']}b) > 0"] = (bool(last["sig_p_bull_slope"]), slope_val)
 
     buckets = {
         "Trend":         (int(last["trend_score"]),         bucket_maxes.get("Trend", 3),         c["trend_min"]),
@@ -388,6 +414,8 @@ def get_current_signals(df: pd.DataFrame) -> dict:
         f"Price > EMA {c['ema_fast']}":          "sig_ema_fast",
         f"Price > EMA {c['ema_slow']}":          "sig_ema_slow",
         "MACD > Signal":                          "sig_macd",
+        f"ROC({c['roc_period']}b) > 0":          "sig_roc",
+        f"p_bull Slope({c['p_bull_slope_period']}b) > 0": "sig_p_bull_slope",
     }
     if has_confidence:
         sig_cols[f"HMM Confidence ≥ {c['p_bull_min']}"] = "sig_confidence"

@@ -156,7 +156,8 @@ def run_walk_forward(
                          keys: stop_loss_pct, take_profit_pct, min_regime_bars,
                                fee_bps, slippage_bps, use_atr_stops, k_stop, k_tp,
                                use_trailing_stop, trailing_stop_pct,
-                               regime_flip_grace_bars
+                               trail_atr_mult, trail_activation_pct,
+                               regime_flip_grace_bars, use_pbull_sizing
     progress_callback  : optional fn(progress: float, message: str) for UI updates
 
     Returns
@@ -311,9 +312,12 @@ def run_walk_forward(
             stress_range_threshold     = risk.get("stress_range_threshold",       0.03),
             stress_force_flat          = risk.get("stress_force_flat",           False),
             stress_cooldown_hours      = risk.get("stress_cooldown_hours",        12),
-            use_trailing_stop          = risk.get("use_trailing_stop",           False),
+            use_trailing_stop          = risk.get("use_trailing_stop",           True),
             trailing_stop_pct          = risk.get("trailing_stop_pct",            2.0),
-            regime_flip_grace_bars     = risk.get("regime_flip_grace_bars",       0),
+            trail_atr_mult             = risk.get("trail_atr_mult",               1.25),
+            trail_activation_pct       = risk.get("trail_activation_pct",         1.5),
+            regime_flip_grace_bars     = risk.get("regime_flip_grace_bars",       2),
+            use_pbull_sizing           = risk.get("use_pbull_sizing",             False),
         )
 
         last_config_hash = metrics.get("config_hash", "")
@@ -393,9 +397,12 @@ def run_walk_forward(
                 stress_range_threshold     = risk.get("stress_range_threshold",       0.03),
                 stress_force_flat          = risk.get("stress_force_flat",           False),
                 stress_cooldown_hours      = risk.get("stress_cooldown_hours",        12),
-                use_trailing_stop          = risk.get("use_trailing_stop",           False),
+                use_trailing_stop          = risk.get("use_trailing_stop",           True),
                 trailing_stop_pct          = risk.get("trailing_stop_pct",            2.0),
-                regime_flip_grace_bars     = risk.get("regime_flip_grace_bars",       0),
+                trail_atr_mult             = risk.get("trail_atr_mult",               1.25),
+                trail_activation_pct       = risk.get("trail_activation_pct",         1.5),
+                regime_flip_grace_bars     = risk.get("regime_flip_grace_bars",       2),
+                use_pbull_sizing           = risk.get("use_pbull_sizing",             False),
             )
             lockbox_metrics["Period Start"] = str(lb_test.index[0].date())
             lockbox_metrics["Period End"]   = str(lb_test.index[-1].date())

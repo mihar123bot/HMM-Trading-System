@@ -10,8 +10,9 @@ Hidden Markov Model engine for market regime detection.
     3. STRESS  : states with occupancy < MIN_OCC_STRESS — spike/outlier clusters
                  that are too rare to represent a sustainable regime.
     4. Bear    : non-STRESS state with the lowest mean return.
-    5. Bull    : non-STRESS, non-Bear states with mean_return > 0.
-                 If none qualify, promote the best non-STRESS, non-Bear state.
+    5. Bull    : non-STRESS, non-Bear states with mean_return_pct > MIN_BULL_MEAN_RET_PCT
+                 AND occupancy > MIN_BULL_OCC.  No fallback; folds with no
+                 qualifying state produce zero trades rather than trading noise.
     6. Neutral : everything else.
   Bull is therefore a *set* of states, not a single argmax.  This prevents
   the K=7 "spike cluster" problem where Bull captures 1-5 extreme hourly bars
@@ -30,7 +31,9 @@ warnings.filterwarnings("ignore")
 
 N_STATES       = 5      # K=5: richer regime space; 4th feature (ret_24h) adds daily-trend context
 RANDOM_STATE   = 42
-MIN_OCC_STRESS = 0.05   # States occupying <5% of train bars → labelled STRESS (spike cluster)
+MIN_OCC_STRESS        = 0.05   # States occupying <5% of train bars → labelled STRESS (spike cluster)
+MIN_BULL_MEAN_RET_PCT = 0.10   # min mean log-return % per bar (×100) for Bull candidacy
+MIN_BULL_OCC          = 0.08   # min occupancy fraction (8%) for Bull candidacy
 
 REGIME_BULL    = "Bull"
 REGIME_BEAR    = "Bear"
@@ -68,6 +71,8 @@ def _label_states(
     features_df: pd.DataFrame,
     X_scaled: np.ndarray,
     min_occ_stress: float = MIN_OCC_STRESS,
+    min_bull_mean_ret_pct: float = MIN_BULL_MEAN_RET_PCT,
+    min_bull_occ: float = MIN_BULL_OCC,
 ) -> tuple[dict, list, int]:
     """
     Label HMM states as Bull (set), Bear, Neutral, or STRESS.
@@ -78,8 +83,9 @@ def _label_states(
     2. Per-state stats: occupancy, mean log-return, std log-return, A_ss.
     3. STRESS: occupancy < min_occ_stress.
     4. Bear  : lowest mean return among non-STRESS states.
-    5. Bull  : non-STRESS, non-Bear states with mean_return > 0.
-               Fallback: best non-STRESS, non-Bear state (even if mean ≤ 0).
+    5. Bull  : non-STRESS, non-Bear states with mean_return_pct > min_bull_mean_ret_pct
+               AND occupancy > min_bull_occ.
+               No fallback — if no state qualifies, bull_states = [] → zero trades.
     6. Neutral: remainder.
 
     Returns
@@ -127,19 +133,15 @@ def _label_states(
         non_stress = info
 
     # ── Step 5: Bull ──────────────────────────────────────────────────────────
+    # Require meaningful positive return AND sufficient occupancy.
+    # No fallback — if no state qualifies, return empty bull_states so the fold
+    # produces zero trades rather than trading a noise/marginal state.
     bull_candidates = [
         si for si in non_stress
-        if si["mean_ret"] > 0 and si["state"] != bear_state
+        if si["mean_ret"] * 100 > min_bull_mean_ret_pct
+        and si["occ"] > min_bull_occ
+        and si["state"] != bear_state
     ]
-
-    if not bull_candidates:
-        # Fallback: best remaining non-STRESS, non-Bear state
-        rest = [si for si in non_stress if si["state"] != bear_state]
-        if rest:
-            bull_candidates = [max(rest, key=lambda x: x["mean_ret"])]
-        else:
-            # Only one state left — promote it to Bull anyway
-            bull_candidates = [max(info, key=lambda x: x["mean_ret"])]
 
     bull_states = [si["state"] for si in bull_candidates]
 
@@ -159,15 +161,19 @@ def _label_states(
     return state_map, bull_states, bear_state
 
 
-def fit_hmm(data: pd.DataFrame, n_states: int = N_STATES, min_occ_stress: float = MIN_OCC_STRESS):
+def fit_hmm(data: pd.DataFrame, n_states: int = N_STATES, min_occ_stress: float = MIN_OCC_STRESS,
+            min_bull_mean_ret_pct: float = MIN_BULL_MEAN_RET_PCT,
+            min_bull_occ: float = MIN_BULL_OCC):
     """
     Fit a GaussianHMM on price data and label states using the persistent-regime algorithm.
 
     Parameters
     ----------
-    data           : OHLCV DataFrame
-    n_states       : number of HMM hidden states (default 4)
-    min_occ_stress : occupancy threshold below which a state is labelled STRESS (default 0.05)
+    data                  : OHLCV DataFrame
+    n_states              : number of HMM hidden states (default 5)
+    min_occ_stress        : occupancy threshold below which a state is labelled STRESS (default 0.05)
+    min_bull_mean_ret_pct : minimum mean log-return % per bar for Bull candidacy (default 0.10)
+    min_bull_occ          : minimum occupancy fraction for Bull candidacy (default 0.08)
 
     Returns
     -------
@@ -194,7 +200,10 @@ def fit_hmm(data: pd.DataFrame, n_states: int = N_STATES, min_occ_stress: float 
     model.fit(X_scaled)
 
     state_map, bull_states, bear_state = _label_states(
-        model, features_df, X_scaled, min_occ_stress=min_occ_stress
+        model, features_df, X_scaled,
+        min_occ_stress=min_occ_stress,
+        min_bull_mean_ret_pct=min_bull_mean_ret_pct,
+        min_bull_occ=min_bull_occ,
     )
 
     return model, scaler, features_df, state_map, bull_states, bear_state

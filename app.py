@@ -133,15 +133,17 @@ def build_sidebar() -> tuple[str, dict, dict]:
         "Signals are split into 4 buckets. ALL bucket minimums must be met to enter."
     )
 
-    with st.sidebar.expander("Trend Bucket (EMA Fast + EMA Slow + MACD)", expanded=True):
+    with st.sidebar.expander("Trend Bucket (EMA + MACD + ROC + p_bull Slope)", expanded=True):
         cfg["trend_min"] = st.slider(
-            "Min Trend signals (of enabled)", 0, 3, DEFAULT_CONFIG["trend_min"], 1,
+            "Min Trend signals (of enabled)", 0, 5, DEFAULT_CONFIG["trend_min"], 1,
             key="trend_min",
         )
         st.caption("Enable/disable individual trend signals:")
-        cfg["sig_ema_fast_on"] = st.checkbox("EMA Fast",  DEFAULT_CONFIG.get("sig_ema_fast_on", True), key="sig_ema_fast_on")
-        cfg["sig_ema_slow_on"] = st.checkbox("EMA Slow",  DEFAULT_CONFIG.get("sig_ema_slow_on", True), key="sig_ema_slow_on")
-        cfg["sig_macd_on"]     = st.checkbox("MACD > Signal", DEFAULT_CONFIG.get("sig_macd_on", True), key="sig_macd_on")
+        cfg["sig_ema_fast_on"]    = st.checkbox("EMA Fast",          DEFAULT_CONFIG.get("sig_ema_fast_on",    True), key="sig_ema_fast_on")
+        cfg["sig_ema_slow_on"]    = st.checkbox("EMA Slow",          DEFAULT_CONFIG.get("sig_ema_slow_on",    True), key="sig_ema_slow_on")
+        cfg["sig_macd_on"]        = st.checkbox("MACD > Signal",     DEFAULT_CONFIG.get("sig_macd_on",        True), key="sig_macd_on")
+        cfg["sig_roc_on"]         = st.checkbox("ROC > 0",           DEFAULT_CONFIG.get("sig_roc_on",         True), key="sig_roc_on")
+        cfg["sig_pbull_slope_on"] = st.checkbox("p_bull Slope > 0",  DEFAULT_CONFIG.get("sig_pbull_slope_on", True), key="sig_pbull_slope_on")
 
     with st.sidebar.expander("Strength + Participation"):
         cfg["strength_min"] = st.slider(
@@ -196,9 +198,15 @@ def build_sidebar() -> tuple[str, dict, dict]:
         help="Bull regime must persist N consecutive bars before entry",
     )
     risk["regime_flip_grace_bars"] = st.sidebar.slider(
-        "Regime-Flip Grace Period (bars)", 0, 6, 0, 1,
+        "Regime-Flip Grace Period (bars)", 0, 6, 2, 1,
         help="Allow up to N non-Bull bars before regime-flip exit fires. "
              "0 = exit immediately on first non-Bull bar.",
+    )
+    risk["use_pbull_sizing"] = st.sidebar.toggle(
+        "Scale Size by p_bull",
+        value=False,
+        help="Multiply position size by p_bull (e.g. p_bull=0.85 → 85% size). "
+             "Composes with vol targeting.",
     )
 
     st.sidebar.markdown("---")
@@ -222,8 +230,9 @@ def build_sidebar() -> tuple[str, dict, dict]:
     st.sidebar.markdown("### Stop Mode")
     risk["use_atr_stops"] = st.sidebar.toggle(
         "Use ATR-Scaled Stops",
-        value=False,
-        help="Replace fixed % SL/TP with ATR multiples.",
+        value=True,
+        help="Replace fixed % SL/TP with ATR multiples (recommended). "
+             "Adapts to current volatility; wider stops in high-vol, tighter in calm.",
     )
     if risk["use_atr_stops"]:
         with st.sidebar.expander("ATR Stop Parameters", expanded=True):
@@ -235,16 +244,28 @@ def build_sidebar() -> tuple[str, dict, dict]:
 
     risk["use_trailing_stop"] = st.sidebar.toggle(
         "Use Trailing Stop",
-        value=False,
-        help="Trail the stop loss N% below the highest close since entry.",
+        value=True,
+        help="Trail the stop below the trade high using ATR distance (or fixed % fallback). "
+             "Only arms after the trade gains trail_activation_pct%.",
     )
     if risk["use_trailing_stop"]:
-        risk["trailing_stop_pct"] = st.sidebar.slider(
-            "Trailing Stop Distance (%)", 0.5, 15.0, 2.0, 0.25, key="trail_pct",
-            help="Stop fires when price drops this % from its highest close since entry.",
-        )
+        with st.sidebar.expander("Trailing Stop Parameters", expanded=True):
+            risk["trail_atr_mult"] = st.slider(
+                "Trailing Stop (ATR multiples)", 0.5, 4.0, 1.25, 0.25, key="trail_atr",
+                help="Trail level = trade_high − N × ATR. Smaller = tighter trail.",
+            )
+            risk["trail_activation_pct"] = st.slider(
+                "Activation Threshold (%)", 0.0, 5.0, 1.5, 0.25, key="trail_act",
+                help="Trailing stop only arms after the trade is this % in profit.",
+            )
+            risk["trailing_stop_pct"] = st.slider(
+                "Fixed % Trail Fallback (%)", 0.5, 15.0, 2.0, 0.25, key="trail_pct",
+                help="Used only when ATR is unavailable.",
+            )
     else:
-        risk["trailing_stop_pct"] = 2.0
+        risk["trail_atr_mult"]       = 1.25
+        risk["trail_activation_pct"] = 1.5
+        risk["trailing_stop_pct"]    = 2.0
 
     st.sidebar.markdown("---")
 
@@ -320,14 +341,18 @@ def build_sidebar() -> tuple[str, dict, dict]:
 
     # ── Indicator Periods ─────────────────────────────────────────────────────
     st.sidebar.markdown("### Indicator Periods")
-    cfg["rsi_period"]        = st.sidebar.slider("RSI Period",               5,  50, DEFAULT_CONFIG["rsi_period"],        1)
-    cfg["momentum_period"]   = st.sidebar.slider("Momentum Period (bars)",   2,  50, DEFAULT_CONFIG["momentum_period"],   1)
-    cfg["volume_sma_period"] = st.sidebar.slider("Volume SMA Period",        5, 100, DEFAULT_CONFIG["volume_sma_period"], 1)
-    cfg["volatility_period"] = st.sidebar.slider("Volatility Window (bars)", 6, 168, DEFAULT_CONFIG["volatility_period"], 1)
-    cfg["adx_period"]        = st.sidebar.slider("ADX Period",               5,  50, DEFAULT_CONFIG["adx_period"],        1)
-    cfg["atr_period"]        = st.sidebar.slider("ATR Period",               5,  50, DEFAULT_CONFIG["atr_period"],        1)
-    cfg["ema_fast"]          = st.sidebar.slider("EMA Fast Period",          5, 100, DEFAULT_CONFIG["ema_fast"],          1)
-    cfg["ema_slow"]          = st.sidebar.slider("EMA Slow Period",         20, 500, DEFAULT_CONFIG["ema_slow"],          5)
+    cfg["rsi_period"]          = st.sidebar.slider("RSI Period",                5,  50, DEFAULT_CONFIG["rsi_period"],          1)
+    cfg["momentum_period"]     = st.sidebar.slider("Momentum Period (bars)",    2,  50, DEFAULT_CONFIG["momentum_period"],     1)
+    cfg["volume_sma_period"]   = st.sidebar.slider("Volume SMA Period",         5, 100, DEFAULT_CONFIG["volume_sma_period"],   1)
+    cfg["volatility_period"]   = st.sidebar.slider("Volatility Window (bars)",  6, 168, DEFAULT_CONFIG["volatility_period"],   1)
+    cfg["adx_period"]          = st.sidebar.slider("ADX Period",                5,  50, DEFAULT_CONFIG["adx_period"],          1)
+    cfg["atr_period"]          = st.sidebar.slider("ATR Period",                5,  50, DEFAULT_CONFIG["atr_period"],          1)
+    cfg["ema_fast"]            = st.sidebar.slider("EMA Fast Period",           5, 100, DEFAULT_CONFIG["ema_fast"],            1)
+    cfg["ema_slow"]            = st.sidebar.slider("EMA Slow Period",          20, 500, DEFAULT_CONFIG["ema_slow"],            5)
+    cfg["roc_period"]          = st.sidebar.slider("ROC Period (bars)",         2,  48, DEFAULT_CONFIG["roc_period"],          1,
+        help="Rate-of-change lookback for sig_roc signal (faster than EMA).")
+    cfg["p_bull_slope_period"] = st.sidebar.slider("p_bull Slope Period (bars)",1,  12, DEFAULT_CONFIG["p_bull_slope_period"], 1,
+        help="Lookback for p_bull slope signal — detects rising HMM confidence.")
 
     st.sidebar.markdown("---")
 
@@ -390,9 +415,12 @@ def run_pipeline(ticker: str, cfg: dict, risk: dict):
         stress_range_threshold   = risk.get("stress_range_threshold",  0.03),
         stress_force_flat        = risk.get("stress_force_flat",       False),
         stress_cooldown_hours    = risk.get("stress_cooldown_hours",   12),
-        use_trailing_stop        = risk.get("use_trailing_stop",       False),
+        use_trailing_stop        = risk.get("use_trailing_stop",       True),
         trailing_stop_pct        = risk.get("trailing_stop_pct",       2.0),
-        regime_flip_grace_bars   = risk.get("regime_flip_grace_bars",  0),
+        trail_atr_mult           = risk.get("trail_atr_mult",          1.25),
+        trail_activation_pct     = risk.get("trail_activation_pct",    1.5),
+        regime_flip_grace_bars   = risk.get("regime_flip_grace_bars",  2),
+        use_pbull_sizing         = risk.get("use_pbull_sizing",        False),
     )
     current_signals = get_current_signals(full)
     return result_df, trades_df, metrics, state_stats, current_signals, sanity_report
