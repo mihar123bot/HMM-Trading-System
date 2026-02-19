@@ -115,9 +115,18 @@ def build_sidebar() -> tuple[str, dict, dict]:
     st.sidebar.markdown("---")
 
     cfg = {}
+    risk = {}
 
     st.sidebar.markdown("### Voting Gate")
     cfg["votes_required"] = st.sidebar.slider("Min Votes Required (out of 8)", 1, 8, DEFAULT_CONFIG["votes_required"], 1)
+
+    st.sidebar.markdown("### Risk Management")
+    risk["stop_loss_pct"]   = st.sidebar.slider("Stop Loss (%)",        0.5, 15.0, 3.0, 0.5,
+                                                  help="Exit if price drops this % from entry")
+    risk["take_profit_pct"] = st.sidebar.slider("Take Profit (%)",      0.5, 30.0, 4.0, 0.5,
+                                                  help="Exit if price rises this % from entry")
+    risk["min_regime_bars"] = st.sidebar.slider("Min Bull Regime Bars", 1,   24,   3,   1,
+                                                  help="Bull regime must persist N bars before entry is allowed")
 
     st.sidebar.markdown("### Entry Thresholds")
     cfg["rsi_max"]            = st.sidebar.slider("RSI Max (< threshold)",  50, 100, DEFAULT_CONFIG["rsi_max"],                      1)
@@ -138,16 +147,6 @@ def build_sidebar() -> tuple[str, dict, dict]:
     cfg["macd_fast"]   = st.sidebar.slider("MACD Fast",   2,  50, DEFAULT_CONFIG["macd_fast"],   1)
     cfg["macd_slow"]   = st.sidebar.slider("MACD Slow",   5, 100, DEFAULT_CONFIG["macd_slow"],   1)
     cfg["macd_signal"] = st.sidebar.slider("MACD Signal", 2,  30, DEFAULT_CONFIG["macd_signal"], 1)
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("## Risk Management")
-    risk = {}
-    risk["stop_loss_pct"]   = st.sidebar.slider("Stop Loss (%)",            0.5, 15.0, 3.0,  0.5,
-                                                  help="Exit if price drops this % from entry")
-    risk["take_profit_pct"] = st.sidebar.slider("Take Profit (%)",          0.5, 30.0, 4.0,  0.5,
-                                                  help="Exit if price rises this % from entry")
-    risk["min_regime_bars"] = st.sidebar.slider("Min Bull Regime Bars",     1,   24,   3,    1,
-                                                  help="Bull regime must persist N bars before entry is allowed")
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Indicator defaults defined in `indicators.py → CONFIG`.")
