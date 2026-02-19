@@ -12,9 +12,17 @@ Entry Rules
 Exit Rules (first condition that triggers wins)
 -----------
   1. Stop Loss      : price drops to SL level
-  2. Take Profit    : price rises to TP level
-  3. Regime Flip    : HMM regime flips to any non-Bull state
-  4. Force Flat     : risk gate demands immediate exit (stress spike / kill switch)
+  2. Trailing Stop  : price drops N% from its highest close since entry (optional)
+  3. Take Profit    : price rises to TP level
+  4. Regime Flip    : HMM regime flips to non-Bull for > regime_flip_grace_bars bars
+  5. Force Flat     : risk gate demands immediate exit (stress spike / kill switch)
+
+Regime-flip grace period
+------------------------
+  If regime_flip_grace_bars > 0, a regime flip to non-Bull does NOT immediately
+  trigger exit. The strategy waits up to N bars; if the regime returns to Bull
+  within the grace window the trade continues. Only exits after N+1 consecutive
+  non-Bull bars.
 
 Stop modes
 ----------
@@ -44,7 +52,7 @@ Phase 3 additions
   Stress force-flat (G): exit immediately when stress spike detected
   Tail metrics (L): Sortino, CVaR 95%, max consecutive losses, time-to-recovery
 
-Cooldown  : 48-hour hard lock after ANY exit
+Cooldown  : 24-hour hard lock after ANY exit
 Leverage  : 1× (spot only)
 Capital   : $10,000 starting
 """
@@ -59,7 +67,7 @@ import pandas as pd
 
 STARTING_CAPITAL     = 10_000.0
 LEVERAGE             = 1.0   # spot-only
-COOLDOWN_HOURS       = 48
+COOLDOWN_HOURS       = 24
 EXECUTION_RULE_VER   = "v1_next_open"
 
 # Risk management defaults (overridable via run_backtest kwargs)
@@ -86,13 +94,18 @@ DEFAULT_COSTS = {"fee_bps": 5, "slippage_bps": 3}
 
 
 def _make_config_hash(stop_loss_pct, take_profit_pct, min_regime_bars,
-                      fee_bps, slippage_bps) -> str:
+                      fee_bps, slippage_bps,
+                      use_trailing_stop=False, trailing_stop_pct=2.0,
+                      regime_flip_grace_bars=0) -> str:
     payload = json.dumps({
-        "stop_loss_pct":   stop_loss_pct,
-        "take_profit_pct": take_profit_pct,
-        "min_regime_bars": min_regime_bars,
-        "fee_bps":         fee_bps,
-        "slippage_bps":    slippage_bps,
+        "stop_loss_pct":          stop_loss_pct,
+        "take_profit_pct":        take_profit_pct,
+        "min_regime_bars":        min_regime_bars,
+        "fee_bps":                fee_bps,
+        "slippage_bps":           slippage_bps,
+        "use_trailing_stop":      use_trailing_stop,
+        "trailing_stop_pct":      trailing_stop_pct,
+        "regime_flip_grace_bars": regime_flip_grace_bars,
     }, sort_keys=True)
     return hashlib.md5(payload.encode()).hexdigest()[:8]
 
@@ -110,6 +123,11 @@ def run_backtest(
     use_atr_stops:    bool  = False,
     k_stop:           float = 2.0,
     k_tp:             float = 3.0,
+    # Trailing stop
+    use_trailing_stop:   bool  = False,
+    trailing_stop_pct:   float = 2.0,
+    # Regime-flip grace period
+    regime_flip_grace_bars: int = 0,
     # Phase 3 J — vol targeting
     use_vol_targeting:  bool  = False,
     vol_target_pct:     float = 30.0,
@@ -141,6 +159,11 @@ def run_backtest(
     slippage_bps      : slippage (basis points per side); None = auto from ticker
     use_atr_stops     : if True, use ATR-scaled SL/TP
     k_stop / k_tp     : ATR multiples for SL / TP
+    use_trailing_stop : if True, trail the SL at trailing_stop_pct% below the
+                        highest close since entry (works alongside TP and regime flip)
+    trailing_stop_pct : distance from trade high to trailing stop level (%)
+    regime_flip_grace_bars : allow up to N non-Bull bars before regime-flip exit fires
+                             (0 = exit on first non-Bull bar, matching prior behaviour)
     use_vol_targeting : (Phase 3 J) scale position by vol_target_pct / realized_vol
     vol_target_pct    : target annualised vol % for sizing
     vol_target_min/max_mult : clamp bounds for size multiplier
@@ -179,7 +202,8 @@ def run_backtest(
     _use_atr = use_atr_stops and has_atr
 
     config_hash = _make_config_hash(
-        stop_loss_pct, take_profit_pct, min_regime_bars, _fee_bps, _slippage_bps
+        stop_loss_pct, take_profit_pct, min_regime_bars, _fee_bps, _slippage_bps,
+        use_trailing_stop, trailing_stop_pct, regime_flip_grace_bars,
     )
 
     n = len(df)
@@ -228,7 +252,12 @@ def run_backtest(
     entries_blocked_cooldown = 0
     entries_blocked_gate     = 0   # kill switch / market quality / stress cooldown
     entries_blocked_external = 0   # Phase 4 external gate blocks
-    exits_sl = exits_tp = exits_regime = exits_eod = exits_force_flat = exits_kill_switch = 0
+    exits_sl = exits_tp = exits_regime = exits_eod = exits_force_flat = exits_kill_switch = exits_trailing_sl = 0
+
+    # Trailing stop and regime-flip grace state
+    trade_high         = 0.0   # highest close since entry (for trailing stop)
+    bear_streak_trade  = 0     # consecutive non-Bull bars while in trade (for grace period)
+    trailing_sl_factor = trailing_stop_pct / 100.0
 
     for i in range(1, n):
         row       = df.iloc[i]
@@ -306,6 +335,8 @@ def run_backtest(
             _exit_reason = pending_exit_reason
             if _exit_reason == "Stop Loss":
                 exits_sl += 1
+            elif _exit_reason == "Trailing Stop":
+                exits_trailing_sl += 1
             elif _exit_reason == "Take Profit":
                 exits_tp += 1
             elif _exit_reason == "Regime Flip":
@@ -367,8 +398,10 @@ def run_backtest(
             notional     = cash * pos_size_mult
             idle_cash    = cash - notional
             entry_equity = notional
-            in_trade     = True
-            entry_price  = entry_open
+            in_trade          = True
+            entry_price       = entry_open
+            trade_high        = entry_fill   # reset trailing stop high water mark
+            bear_streak_trade = 0            # reset grace period counter
 
             if _use_atr and "atr" in prev_row.index:
                 atr_val = prev_row["atr"]
@@ -385,6 +418,14 @@ def run_backtest(
 
             pending_entry = False
 
+        # ── Update trade-level trackers (trailing stop high, grace period) ──
+        if in_trade:
+            trade_high = max(trade_high, close_i)
+            if regime == REGIME_BULL:
+                bear_streak_trade = 0
+            else:
+                bear_streak_trade += 1
+
         # ── Step 2: Check exit conditions for current bar ──────────────────
         if in_trade and not pending_exit:
             # Phase 3 G: stress force-flat (highest priority)
@@ -397,17 +438,21 @@ def run_backtest(
             elif _use_atr:
                 if close_i <= sl_price:
                     pending_exit = True; pending_exit_reason = "Stop Loss"
+                elif use_trailing_stop and close_i <= trade_high * (1 - trailing_sl_factor):
+                    pending_exit = True; pending_exit_reason = "Trailing Stop"
                 elif close_i >= tp_price:
                     pending_exit = True; pending_exit_reason = "Take Profit"
-                elif regime != REGIME_BULL:
+                elif regime != REGIME_BULL and bear_streak_trade > regime_flip_grace_bars:
                     pending_exit = True; pending_exit_reason = "Regime Flip"
             else:
                 price_ret_check = (close_i - entry_fill) / entry_fill
                 if price_ret_check <= sl_factor:
                     pending_exit = True; pending_exit_reason = "Stop Loss"
+                elif use_trailing_stop and close_i <= trade_high * (1 - trailing_sl_factor):
+                    pending_exit = True; pending_exit_reason = "Trailing Stop"
                 elif price_ret_check >= tp_factor:
                     pending_exit = True; pending_exit_reason = "Take Profit"
-                elif regime != REGIME_BULL:
+                elif regime != REGIME_BULL and bear_streak_trade > regime_flip_grace_bars:
                     pending_exit = True; pending_exit_reason = "Regime Flip"
 
         # ── Step 3: Check entry conditions ────────────────────────────────
@@ -545,6 +590,7 @@ def run_backtest(
         "entries_blocked_gate":      entries_blocked_gate,
         "entries_blocked_external":  entries_blocked_external,
         "exits_stop_loss":           exits_sl,
+        "exits_trailing_stop":       exits_trailing_sl,
         "exits_take_profit":         exits_tp,
         "exits_regime_flip":         exits_regime,
         "exits_end_of_data":         exits_eod,
@@ -566,6 +612,7 @@ def run_backtest(
     metrics["execution_rule_version"]   = EXECUTION_RULE_VER
     metrics["config_hash"]              = config_hash
     metrics["exits_stop_loss"]          = exits_sl
+    metrics["exits_trailing_stop"]      = exits_trailing_sl
     metrics["exits_take_profit"]        = exits_tp
     metrics["exits_regime_flip"]        = exits_regime
     metrics["exits_force_flat"]         = exits_force_flat
@@ -719,8 +766,8 @@ if __name__ == "__main__":
     raw = fetch_asset_data("BTC-USD")
 
     print("Fitting HMM …")
-    model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(raw)
-    with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw, bull_state)
+    model, scaler, feat_df, state_map, bull_states, bear_state = fit_hmm(raw)
+    with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw, bull_states)
 
     print("Computing indicators …")
     full = compute_indicators(with_regimes)

@@ -154,7 +154,9 @@ def run_walk_forward(
     cfg                : indicator config overrides (passed to compute_indicators)
     risk               : risk / backtest config overrides
                          keys: stop_loss_pct, take_profit_pct, min_regime_bars,
-                               fee_bps, slippage_bps, use_atr_stops, k_stop, k_tp
+                               fee_bps, slippage_bps, use_atr_stops, k_stop, k_tp,
+                               use_trailing_stop, trailing_stop_pct,
+                               regime_flip_grace_bars
     progress_callback  : optional fn(progress: float, message: str) for UI updates
 
     Returns
@@ -309,6 +311,9 @@ def run_walk_forward(
             stress_range_threshold     = risk.get("stress_range_threshold",       0.03),
             stress_force_flat          = risk.get("stress_force_flat",           False),
             stress_cooldown_hours      = risk.get("stress_cooldown_hours",        12),
+            use_trailing_stop          = risk.get("use_trailing_stop",           False),
+            trailing_stop_pct          = risk.get("trailing_stop_pct",            2.0),
+            regime_flip_grace_bars     = risk.get("regime_flip_grace_bars",       0),
         )
 
         last_config_hash = metrics.get("config_hash", "")
@@ -388,6 +393,9 @@ def run_walk_forward(
                 stress_range_threshold     = risk.get("stress_range_threshold",       0.03),
                 stress_force_flat          = risk.get("stress_force_flat",           False),
                 stress_cooldown_hours      = risk.get("stress_cooldown_hours",        12),
+                use_trailing_stop          = risk.get("use_trailing_stop",           False),
+                trailing_stop_pct          = risk.get("trailing_stop_pct",            2.0),
+                regime_flip_grace_bars     = risk.get("regime_flip_grace_bars",       0),
             )
             lockbox_metrics["Period Start"] = str(lb_test.index[0].date())
             lockbox_metrics["Period End"]   = str(lb_test.index[-1].date())

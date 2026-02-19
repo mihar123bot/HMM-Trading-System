@@ -41,13 +41,13 @@ import pandas as pd
 CONFIG: dict = {
     # ── Periods ──────────────────────────────────────────────────────────────
     "rsi_period":         14,
-    "momentum_period":    10,
-    "volume_sma_period":  20,
+    "momentum_period":    5,
+    "volume_sma_period":  10,
     "volatility_period":  24,   # hours; annualised via ×√8760
     "adx_period":         14,
     "atr_period":         14,   # Wilder ATR period
-    "ema_fast":           50,
-    "ema_slow":           200,
+    "ema_fast":           20,
+    "ema_slow":           50,
     "macd_fast":          12,
     "macd_slow":          26,
     "macd_signal":        9,
@@ -74,10 +74,10 @@ CONFIG: dict = {
     "sig_confidence_on":  True,
 
     # ── Bucket voting ─────────────────────────────────────────────────────────
-    "trend_min":          2,     # of 3 (ema_fast, ema_slow, macd)
+    "trend_min":          1,     # of 3 (ema_fast, ema_slow, macd)
     "strength_min":       1,     # of 1 (adx)
     "participation_min":  1,     # of 1 (volume)
-    "risk_min":           2,     # of 3–4 (rsi, volatility, momentum [, confidence])
+    "risk_min":           1,     # of 3–4 (rsi, volatility, momentum [, confidence])
 
     # ── Stress / market quality gates (Phase 3 G, K) ─────────────────────────
     # range_1h = (High-Low)/Close; a spike bar is one where range_1h is large.

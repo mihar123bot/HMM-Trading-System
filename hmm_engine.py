@@ -2,8 +2,8 @@
 hmm_engine.py
 Hidden Markov Model engine for market regime detection.
 
-- GaussianHMM with configurable N_STATES (default 4)
-- Features: log-returns, range (High-Low)/Close, volume volatility
+- GaussianHMM with configurable N_STATES (default 5)
+- Features: log-returns, range (High-Low)/Close, volume volatility, 24h rolling return
 - State labelling (persistent-regime algorithm):
     1. Viterbi-decode the training window.
     2. Compute per-state: occupancy (%), mean log-return, std log-return, A_ss.
@@ -28,7 +28,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-N_STATES       = 4      # K=4: 1 Bear + 1-2 Bull + 1-2 Neutral; small enough to avoid spike clusters
+N_STATES       = 5      # K=5: richer regime space; 4th feature (ret_24h) adds daily-trend context
 RANDOM_STATE   = 42
 MIN_OCC_STRESS = 0.05   # States occupying <5% of train bars → labelled STRESS (spike cluster)
 
@@ -47,14 +47,17 @@ def _build_features(data: pd.DataFrame) -> pd.DataFrame:
     1. log_return  : log(Close_t / Close_{t-1})
     2. range_ratio : (High - Low) / Close  — proxy for intrabar volatility
     3. vol_vol     : rolling 5-bar std of log(Volume)  — volume volatility
+    4. ret_24h     : log(Close_t / Close_{t-24})  — 24-bar (daily) trend context
     """
     log_ret     = np.log(data["Close"] / data["Close"].shift(1))
     range_ratio = (data["High"] - data["Low"]) / data["Close"]
     log_vol     = np.log(data["Volume"].replace(0, np.nan))
     vol_vol     = log_vol.rolling(5).std()
+    ret_24h     = np.log(data["Close"] / data["Close"].shift(24))
 
     features = pd.DataFrame(
-        {"log_return": log_ret, "range_ratio": range_ratio, "vol_vol": vol_vol}
+        {"log_return": log_ret, "range_ratio": range_ratio,
+         "vol_vol": vol_vol, "ret_24h": ret_24h}
     )
     features.dropna(inplace=True)
     return features

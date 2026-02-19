@@ -195,6 +195,11 @@ def build_sidebar() -> tuple[str, dict, dict]:
         "Min Bull Regime Bars", 1, 24, 3, 1,
         help="Bull regime must persist N consecutive bars before entry",
     )
+    risk["regime_flip_grace_bars"] = st.sidebar.slider(
+        "Regime-Flip Grace Period (bars)", 0, 6, 0, 1,
+        help="Allow up to N non-Bull bars before regime-flip exit fires. "
+             "0 = exit immediately on first non-Bull bar.",
+    )
 
     st.sidebar.markdown("---")
 
@@ -227,6 +232,19 @@ def build_sidebar() -> tuple[str, dict, dict]:
     else:
         risk["k_stop"] = 2.0
         risk["k_tp"]   = 3.0
+
+    risk["use_trailing_stop"] = st.sidebar.toggle(
+        "Use Trailing Stop",
+        value=False,
+        help="Trail the stop loss N% below the highest close since entry.",
+    )
+    if risk["use_trailing_stop"]:
+        risk["trailing_stop_pct"] = st.sidebar.slider(
+            "Trailing Stop Distance (%)", 0.5, 15.0, 2.0, 0.25, key="trail_pct",
+            help="Stop fires when price drops this % from its highest close since entry.",
+        )
+    else:
+        risk["trailing_stop_pct"] = 2.0
 
     st.sidebar.markdown("---")
 
@@ -372,6 +390,9 @@ def run_pipeline(ticker: str, cfg: dict, risk: dict):
         stress_range_threshold   = risk.get("stress_range_threshold",  0.03),
         stress_force_flat        = risk.get("stress_force_flat",       False),
         stress_cooldown_hours    = risk.get("stress_cooldown_hours",   12),
+        use_trailing_stop        = risk.get("use_trailing_stop",       False),
+        trailing_stop_pct        = risk.get("trailing_stop_pct",       2.0),
+        regime_flip_grace_bars   = risk.get("regime_flip_grace_bars",  0),
     )
     current_signals = get_current_signals(full)
     return result_df, trades_df, metrics, state_stats, current_signals, sanity_report
@@ -798,8 +819,8 @@ def main():
         if risk.get("use_vol_targeting"):      gates_active.append("Vol Target")
         gates_str = " · " + " · ".join(gates_active) if gates_active else ""
         st.markdown(
-            '<p class="section-title">Hidden Markov Model · 7 States · '
-            f'Spot Only · 48h Cooldown · Bucket Voting Gate · {exit_mode} Stops{gates_str}</p>',
+            '<p class="section-title">Hidden Markov Model · 5 States · '
+            f'Spot Only · 24h Cooldown · Bucket Voting Gate · {exit_mode} Stops{gates_str}</p>',
             unsafe_allow_html=True,
         )
     with col_btn:
@@ -999,17 +1020,18 @@ def main():
                 )
 
         # Exit breakdown
-        e1, e2, e3, e4, e5, e6 = st.columns(6)
+        e1, e2, e3, e4, e5, e6, e7 = st.columns(7)
         stop_mode_label = metrics.get("Exit Mode", "Fixed %")
         exec_ver  = metrics.get("execution_rule_version", "–")
         cfg_hash  = metrics.get("config_hash", "–")
         for col, label, value, color in [
-            (e1, "Stop Loss Exits",    metrics["Stop Loss Exits"],   "#ff5252"),
-            (e2, "Take Profit Exits",  metrics["Take Profit Exits"], "#69f0ae"),
-            (e3, "Regime Flip Exits",  metrics["Regime Flip Exits"], "#f0a500"),
-            (e4, "Total Fees ($)",     f"${metrics['Total Fees ($)']:,.2f}", "#d2a8ff"),
-            (e5, "Stop Mode",          stop_mode_label,              "#58a6ff"),
-            (e6, "Exec Rule",          exec_ver,                     "#8b949e"),
+            (e1, "Stop Loss Exits",     metrics["Stop Loss Exits"],                  "#ff5252"),
+            (e2, "Trailing Stop Exits", metrics.get("exits_trailing_stop", 0),       "#ffa657"),
+            (e3, "Take Profit Exits",   metrics["Take Profit Exits"],                "#69f0ae"),
+            (e4, "Regime Flip Exits",   metrics["Regime Flip Exits"],                "#f0a500"),
+            (e5, "Total Fees ($)",      f"${metrics['Total Fees ($)']:,.2f}",        "#d2a8ff"),
+            (e6, "Stop Mode",           stop_mode_label,                             "#58a6ff"),
+            (e7, "Exec Rule",           exec_ver,                                    "#8b949e"),
         ]:
             with col:
                 st.markdown(
