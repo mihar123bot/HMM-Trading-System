@@ -6,7 +6,7 @@ Entry Rules
 -----------
   - HMM regime == Bull for at least MIN_REGIME_BARS consecutive bars
   - Bucket voting gate passes (all 4 bucket minimums met)
-  - Not in 48-hour post-exit cooldown
+  - Not in 24-hour post-exit cooldown
   - Not blocked by risk gates (kill switch, market quality, stress cooldown)
 
 Exit Rules (first condition that triggers wins)
