@@ -1,11 +1,22 @@
 """
 indicators.py
-Computes all 8 technical confirmation signals used by the voting system.
+Computes all technical confirmation signals used by the bucket voting system.
 
 ──────────────────────────────────────────────
   CONFIGURATION — edit thresholds and periods here.
   Everything flows from CONFIG; no magic numbers elsewhere.
 ──────────────────────────────────────────────
+
+Bucket Voting System (replaces flat 7-of-8 gate)
+-------------------------------------------------
+Signals are grouped into 4 buckets. Each bucket has a minimum passing score.
+All four bucket minimums must be met to enable entry.
+
+  Trend         (3 signals): EMA Fast, EMA Slow, MACD          → need ≥ trend_min
+  Strength      (1 signal) : ADX                               → need ≥ strength_min
+  Participation (1 signal) : Volume > SMA                      → need ≥ participation_min
+  Risk/Cond.    (3+1 sigs) : RSI, Volatility, Momentum,        → need ≥ risk_min
+                             [+ HMM Confidence if p_bull avail]
 """
 
 import numpy as np
@@ -21,6 +32,7 @@ import pandas as pd
 #  volume_sma_period   : rolling window for volume baseline
 #  volatility_period   : rolling window for annualised-vol calculation
 #  adx_period          : ADX / DI smoothing period
+#  atr_period          : ATR smoothing period (Wilder)
 #  ema_fast            : fast EMA period (EMA 50 by default)
 #  ema_slow            : slow EMA period (EMA 200 by default)
 #  macd_fast           : MACD fast EMA
@@ -33,10 +45,15 @@ import pandas as pd
 #  momentum_min_pct    : momentum must be ABOVE this %        (default 1.0)
 #  volatility_max_pct  : annualised vol must be BELOW this %  (default 6.0)
 #  adx_min             : ADX must be ABOVE this value         (default 25)
+#  p_bull_min          : HMM Bull confidence must be ABOVE this (default 0.55)
+#                        Only active when p_bull column exists in data.
 #
-#  Voting
-#  ------
-#  votes_required      : minimum passing votes (out of 8) to enable entry
+#  Bucket Voting
+#  -------------
+#  trend_min           : min Trend signals   (0-3, default 2)
+#  strength_min        : min Strength signals (0-1, default 1)
+#  participation_min   : min Participation signals (0-1, default 1)
+#  risk_min            : min Risk signals    (0-3 or 0-4, default 2)
 # ══════════════════════════════════════════════════════════════════════════════
 
 CONFIG: dict = {
@@ -46,6 +63,7 @@ CONFIG: dict = {
     "volume_sma_period":  20,
     "volatility_period":  24,   # hours; annualised via ×√8760
     "adx_period":         14,
+    "atr_period":         14,   # Wilder ATR period
     "ema_fast":           50,
     "ema_slow":           200,
     "macd_fast":          12,
@@ -57,9 +75,13 @@ CONFIG: dict = {
     "momentum_min_pct":   1.0,   # momentum > momentum_min_pct %
     "volatility_max_pct": 6.0,   # annualised vol < volatility_max_pct %
     "adx_min":            25,    # ADX > adx_min
+    "p_bull_min":         0.55,  # HMM Bull confidence >= p_bull_min
 
-    # ── Voting ────────────────────────────────────────────────────────────────
-    "votes_required":     7,     # out of 8 signals
+    # ── Bucket Voting ─────────────────────────────────────────────────────────
+    "trend_min":          2,     # of 3 (ema_fast, ema_slow, macd)
+    "strength_min":       1,     # of 1 (adx)
+    "participation_min":  1,     # of 1 (volume)
+    "risk_min":           2,     # of 3–4 (rsi, volatility, momentum [, confidence])
 }
 
 
@@ -114,33 +136,48 @@ def _adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.S
     return adx
 
 
+def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:
+    """Wilder-smoothed Average True Range (ATR)."""
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
+        axis=1,
+    ).max(axis=1)
+    return tr.ewm(com=period - 1, adjust=False).mean()
+
+
 # ──────────────────────────────────────────────
 # Main function
 # ──────────────────────────────────────────────
 
 def compute_indicators(data: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
     """
-    Compute all indicators and boolean signals, driven entirely by *cfg*
-    (defaults to the module-level CONFIG).
+    Compute all indicators and bucket-based boolean signals, driven entirely
+    by *cfg* (defaults to the module-level CONFIG).
 
     Parameters
     ----------
-    data : OHLCV DataFrame (must have Open, High, Low, Close, Volume)
+    data : OHLCV DataFrame with regime/hmm columns (must have Open, High, Low, Close, Volume)
     cfg  : optional override dict — pass only the keys you want to change,
            the rest fall back to CONFIG defaults.
-           Example: compute_indicators(data, cfg={"rsi_max": 75, "adx_min": 20})
 
     Raw value columns added:
         rsi, momentum_pct, vol_{n}_sma, volatility_pct,
-        adx, ema{fast}, ema{slow}, macd_line, macd_signal
+        adx, atr, ema{fast}, ema{slow}, macd_line, macd_signal
 
     Boolean signal columns added:
         sig_rsi, sig_momentum, sig_volume, sig_volatility,
-        sig_adx, sig_ema_fast, sig_ema_slow, sig_macd
+        sig_adx, sig_ema_fast, sig_ema_slow, sig_macd, sig_confidence
+
+    Bucket score columns added:
+        trend_score         : 0–3 (ema_fast + ema_slow + macd)
+        strength_score      : 0–1 (adx)
+        participation_score : 0–1 (volume)
+        risk_score          : 0–3 or 0–4 (rsi + volatility + momentum [+ confidence])
 
     Summary columns added:
-        vote_count  : integer 0-8 (number of passing signals)
-        signal_ok   : True when vote_count >= cfg["votes_required"]
+        vote_count  : total of all bucket scores
+        signal_ok   : True when all bucket minimums are met
     """
     # Merge caller overrides into a working copy of CONFIG
     c = {**CONFIG, **(cfg or {})}
@@ -163,6 +200,7 @@ def compute_indicators(data: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
     df["volatility_pct"] = log_ret.rolling(c["volatility_period"]).std() * np.sqrt(8760) * 100
 
     df["adx"] = _adx(high, low, close, c["adx_period"])
+    df["atr"] = _atr(high, low, close, c["atr_period"])
 
     ema_fast_col = f"ema{c['ema_fast']}"
     ema_slow_col = f"ema{c['ema_slow']}"
@@ -183,13 +221,35 @@ def compute_indicators(data: pd.DataFrame, cfg: dict = None) -> pd.DataFrame:
     df["sig_ema_slow"]   = close > df[ema_slow_col]
     df["sig_macd"]       = df["macd_line"] > df["macd_signal"]
 
-    signal_cols = [
-        "sig_rsi", "sig_momentum", "sig_volume", "sig_volatility",
-        "sig_adx", "sig_ema_fast", "sig_ema_slow", "sig_macd",
-    ]
+    # HMM confidence signal (uses p_bull column if available from hmm_engine)
+    if "p_bull" in df.columns:
+        df["sig_confidence"] = df["p_bull"] >= c["p_bull_min"]
+    else:
+        df["sig_confidence"] = True  # graceful fallback when p_bull not present
 
-    df["vote_count"] = df[signal_cols].sum(axis=1)
-    df["signal_ok"]  = df["vote_count"] >= c["votes_required"]
+    # ── Bucket scores ─────────────────────────────────────────────────────────
+    df["trend_score"]         = df[["sig_ema_fast", "sig_ema_slow", "sig_macd"]].sum(axis=1)
+    df["strength_score"]      = df[["sig_adx"]].sum(axis=1)
+    df["participation_score"] = df[["sig_volume"]].sum(axis=1)
+
+    # Risk bucket includes confidence signal (4 signals total when p_bull present)
+    risk_signals = ["sig_rsi", "sig_volatility", "sig_momentum", "sig_confidence"]
+    df["risk_score"] = df[risk_signals].sum(axis=1)
+
+    # ── Bucket gate ───────────────────────────────────────────────────────────
+    df["signal_ok"] = (
+        (df["trend_score"]         >= c["trend_min"])
+        & (df["strength_score"]      >= c["strength_min"])
+        & (df["participation_score"] >= c["participation_min"])
+        & (df["risk_score"]          >= c["risk_min"])
+    )
+
+    # vote_count = total signals passing across all buckets (for display)
+    all_signal_cols = [
+        "sig_rsi", "sig_momentum", "sig_volume", "sig_volatility",
+        "sig_adx", "sig_ema_fast", "sig_ema_slow", "sig_macd", "sig_confidence",
+    ]
+    df["vote_count"] = df[all_signal_cols].sum(axis=1)
 
     # Stash effective config so callers can inspect it
     df.attrs["indicator_config"] = c
@@ -201,7 +261,11 @@ def get_current_signals(df: pd.DataFrame) -> dict:
     """
     Return a snapshot dict of the most recent bar's signal values.
 
-    Each entry: signal_label -> (passed: bool, current_value)
+    Returns two sections:
+      "signals"  : individual signal label -> (passed: bool, current_value)
+      "buckets"  : bucket name -> (score: int, required: int, passed: bool)
+      "p_bull"   : float (HMM Bull confidence, or None if unavailable)
+
     The labels reflect the thresholds actually used (from df.attrs["indicator_config"]).
     """
     last = df.iloc[-1]
@@ -211,7 +275,9 @@ def get_current_signals(df: pd.DataFrame) -> dict:
     ema_fast_col = f"ema{c['ema_fast']}"
     ema_slow_col = f"ema{c['ema_slow']}"
 
-    return {
+    has_confidence = "p_bull" in df.columns
+
+    signals = {
         f"RSI < {c['rsi_max']}": (
             bool(last["sig_rsi"]),
             round(float(last["rsi"]), 2),
@@ -244,4 +310,26 @@ def get_current_signals(df: pd.DataFrame) -> dict:
             bool(last["sig_macd"]),
             round(float(last["macd_line"]), 4),
         ),
+    }
+
+    if has_confidence:
+        signals[f"HMM Confidence ≥ {c['p_bull_min']}"] = (
+            bool(last["sig_confidence"]),
+            round(float(last["p_bull"]), 3),
+        )
+
+    risk_max = 4 if has_confidence else 3
+    buckets = {
+        "Trend":         (int(last["trend_score"]),         3,        c["trend_min"]),
+        "Strength":      (int(last["strength_score"]),      1,        c["strength_min"]),
+        "Participation": (int(last["participation_score"]), 1,        c["participation_min"]),
+        "Risk/Cond.":    (int(last["risk_score"]),          risk_max, c["risk_min"]),
+    }
+
+    p_bull_val = round(float(last["p_bull"]), 3) if has_confidence else None
+
+    return {
+        "signals": signals,
+        "buckets": buckets,
+        "p_bull":  p_bull_val,
     }

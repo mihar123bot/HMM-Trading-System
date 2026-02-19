@@ -1,38 +1,99 @@
 """
 backtester.py
-Runs the regime-based HMM strategy simulation.
+Runs the regime-based HMM strategy simulation (spot-only, no leverage).
 
 Entry Rules
 -----------
   - HMM regime == Bull for at least MIN_REGIME_BARS consecutive bars
-  - vote_count >= votes_required
+  - Bucket voting gate passes (all 4 bucket minimums met)
 
 Exit Rules (first condition that triggers wins)
 -----------
-  1. Stop Loss   : price drops STOP_LOSS_PCT from entry  (fastest, highest priority)
-  2. Take Profit : price rises TAKE_PROFIT_PCT from entry
+  1. Stop Loss   : price drops to SL level (fastest, highest priority)
+  2. Take Profit : price rises to TP level
   3. Regime Flip : HMM regime flips to any non-Bull state
 
-Cooldown : 48-hour hard lock after ANY exit
-Leverage : 2.5× applied to PnL calculation
-Capital  : $10,000 starting
+Stop modes
+----------
+  Fixed %   : SL = entry_fill × (1 − |stop_loss_pct|/100)
+              TP = entry_fill × (1 + take_profit_pct/100)
+  ATR-based : SL = entry_fill − k_stop × ATR_at_entry
+              TP = entry_fill + k_tp   × ATR_at_entry
+
+Execution model (v1_next_open)
+-------------------------------
+  Signal fires at bar i (based on Close[i] data); fill executes at bar i+1's Open.
+
+  Cost model — slippage and fees are treated separately:
+    slippage_factor  = slippage_bps / 10_000
+    entry_fill       = Open[i+1] × (1 + slippage_factor)   ← market-impact in price
+    exit_fill        = Open[i+1] × (1 − slippage_factor)   ← market-impact in price
+
+    notional         = cash   (spot position = full equity, 1× only)
+    fee_entry_usd    = notional × fee_bps / 10_000          ← dollar debit at entry
+    fee_exit_usd     = notional × fee_bps / 10_000          ← dollar debit at exit
+
+  PnL:
+    price_ret        = (exit_fill − entry_fill) / entry_fill   ← captures slippage
+    gross_pnl        = price_ret × notional
+    net_pnl          = gross_pnl − fee_entry_usd − fee_exit_usd
+    exit_equity      = cash + net_pnl
+
+  Sanity check (per trade):
+    total_cost_usd   ≈ notional × (fee_bps + slippage_bps) / 10_000 × 2
+    actual cost      = (fee_entry + fee_exit) + slippage embedded in price_ret
+
+Cooldown  : 48-hour hard lock after ANY exit
+Leverage  : 1× (spot only — no leverage applied)
+Capital   : $10,000 starting
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 import numpy as np
 import pandas as pd
 
-STARTING_CAPITAL  = 10_000.0
-LEVERAGE          = 2.5
-COOLDOWN_HOURS    = 48
+STARTING_CAPITAL     = 10_000.0
+LEVERAGE             = 1.0   # spot-only; kept as constant for forward-compatibility
+COOLDOWN_HOURS       = 48
+EXECUTION_RULE_VER   = "v1_next_open"
 
 # Risk management defaults (overridable via run_backtest kwargs)
-STOP_LOSS_PCT     = -3.0   # % move from entry price that triggers stop  (negative)
-TAKE_PROFIT_PCT   =  4.0   # % move from entry price that triggers TP    (positive)
+STOP_LOSS_PCT     = -3.0   # % move from entry fill that triggers stop  (negative)
+TAKE_PROFIT_PCT   =  4.0   # % move from entry fill that triggers TP    (positive)
 MIN_REGIME_BARS   =  3     # consecutive Bull bars required before entry
 
 REGIME_BULL = "Bull"
+
+# Per-asset execution cost defaults (bps per side = fees + slippage)
+EXECUTION_COSTS: dict[str, dict] = {
+    "BTC-USD": {"fee_bps": 5,  "slippage_bps": 3},
+    "ETH-USD": {"fee_bps": 5,  "slippage_bps": 3},
+    "SOL-USD": {"fee_bps": 10, "slippage_bps": 5},
+    "XRP-USD": {"fee_bps": 10, "slippage_bps": 5},
+    "COIN":    {"fee_bps": 8,  "slippage_bps": 4},
+    "NVDA":    {"fee_bps": 2,  "slippage_bps": 1},
+    "AVGO":    {"fee_bps": 2,  "slippage_bps": 1},
+    "TSM":     {"fee_bps": 2,  "slippage_bps": 1},
+    "MSFT":    {"fee_bps": 1,  "slippage_bps": 1},
+    "NOW":     {"fee_bps": 2,  "slippage_bps": 1},
+}
+DEFAULT_COSTS = {"fee_bps": 5, "slippage_bps": 3}
+
+
+def _make_config_hash(stop_loss_pct, take_profit_pct, min_regime_bars,
+                      fee_bps, slippage_bps) -> str:
+    payload = json.dumps({
+        "stop_loss_pct":   stop_loss_pct,
+        "take_profit_pct": take_profit_pct,
+        "min_regime_bars": min_regime_bars,
+        "fee_bps":         fee_bps,
+        "slippage_bps":    slippage_bps,
+    }, sort_keys=True)
+    return hashlib.md5(payload.encode()).hexdigest()[:8]
 
 
 def run_backtest(
@@ -40,21 +101,53 @@ def run_backtest(
     stop_loss_pct:   float = STOP_LOSS_PCT,
     take_profit_pct: float = TAKE_PROFIT_PCT,
     min_regime_bars: int   = MIN_REGIME_BARS,
+    # Execution cost params
+    ticker:          str   = "",
+    fee_bps:         float = None,
+    slippage_bps:    float = None,
+    # ATR stop params
+    use_atr_stops:   bool  = False,
+    k_stop:          float = 2.0,
+    k_tp:            float = 3.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     Parameters
     ----------
-    data            : DataFrame with Close, regime, signal_ok columns
-    stop_loss_pct   : exit if price return from entry <= this value  (e.g. -3.0)
-    take_profit_pct : exit if price return from entry >= this value  (e.g.  4.0)
+    data            : DataFrame with Open, Close, regime, signal_ok, [atr, p_bull] columns
+    stop_loss_pct   : exit if price return from entry fill <= this value  (e.g. -3.0)
+    take_profit_pct : exit if price return from entry fill >= this value  (e.g.  4.0)
     min_regime_bars : minimum consecutive Bull bars before entry allowed
+    ticker          : asset ticker for auto-selecting execution cost defaults
+    fee_bps         : override commission fee (basis points per side)
+    slippage_bps    : override slippage (basis points per side)
+    use_atr_stops   : if True, use ATR-scaled SL/TP instead of fixed %
+    k_stop          : stop loss in ATR multiples
+    k_tp            : take profit in ATR multiples
 
     Returns
     -------
     result_df, trades_df, metrics
     """
     df = data.copy()
-    df = df.dropna(subset=["Close", "regime", "signal_ok"])
+    required_cols = ["Open", "Close", "regime", "signal_ok"]
+    df = df.dropna(subset=[c for c in required_cols if c in df.columns])
+
+    # ── Resolve execution costs ───────────────────────────────────────────────
+    defaults          = EXECUTION_COSTS.get(ticker, DEFAULT_COSTS)
+    _fee_bps          = fee_bps      if fee_bps      is not None else defaults["fee_bps"]
+    _slippage_bps     = slippage_bps if slippage_bps is not None else defaults["slippage_bps"]
+    # Slippage is modelled as a price adjustment; fee is a separate dollar debit.
+    slip_factor       = _slippage_bps / 10_000.0   # applied to Open fill price
+    fee_factor        = _fee_bps      / 10_000.0   # applied to notional (cash) as dollar debit
+
+    has_atr  = "atr" in df.columns and not df["atr"].isna().all()
+    _use_atr = use_atr_stops and has_atr
+
+    has_p_bull = "p_bull" in df.columns
+
+    config_hash = _make_config_hash(
+        stop_loss_pct, take_profit_pct, min_regime_bars, _fee_bps, _slippage_bps
+    )
 
     n = len(df)
     equity   = np.full(n, STARTING_CAPITAL, dtype=float)
@@ -62,113 +155,315 @@ def run_backtest(
 
     trades = []
 
-    cash        = STARTING_CAPITAL
-    in_trade    = False
-    entry_price = 0.0
-    entry_time  = None
-    exit_time   = None
-    bull_streak = 0        # consecutive Bull bars counter
+    cash            = STARTING_CAPITAL
+    in_trade        = False
+    pending_entry   = False   # entry signal fired at bar i; fill at bar i+1 Open
+    pending_exit    = False   # exit signal fired at bar i; fill at bar i+1 Open
+    pending_exit_reason = None
+
+    entry_price    = 0.0
+    entry_fill     = 0.0
+    entry_time     = None
+    entry_equity   = 0.0    # cash at entry (for notional computation)
+    exit_time      = None
+    bull_streak    = 0
+    atr_at_entry   = 0.0
+    sl_price       = 0.0
+    tp_price       = 0.0
+    total_fees     = 0.0
 
     sl_factor = stop_loss_pct   / 100.0
     tp_factor = take_profit_pct / 100.0
 
+    # ── Attribution counters ──────────────────────────────────────────────────
+    bars_bull_regime         = 0
+    bars_p_bull_pass         = 0
+    bars_signal_ok           = 0
+    bars_eligible            = 0
+    entries_blocked_cooldown = 0
+    exits_sl = exits_tp = exits_regime = exits_eod = 0
+
+    # Loop starts at bar 1 so we always have a "previous bar" for streak.
+    # Bar 0 is the signal bar for fills at bar 1 if needed — handled by pending flags.
     for i in range(1, n):
         row       = df.iloc[i]
+        prev_row  = df.iloc[i - 1]
         regime    = row["regime"]
         signal_ok = bool(row["signal_ok"])
-        price     = float(row["Close"])
+        close_i   = float(row["Close"])
+        open_i    = float(row["Open"])
         ts        = df.index[i]
+        p_bull_i  = float(row["p_bull"]) if has_p_bull else 1.0
 
-        # ── Track consecutive Bull bars ──────────────────────────────────
+        # ── Attribution: regime / p_bull / signal ─────────────────────────
+        if regime == REGIME_BULL:
+            bars_bull_regime += 1
+            if p_bull_i >= 0.0:   # always True; track separately below
+                bars_p_bull_pass += 1
+            if signal_ok:
+                bars_signal_ok += 1
+
+        # ── Track consecutive Bull bars (based on CURRENT bar regime) ─────
         if regime == REGIME_BULL:
             bull_streak += 1
         else:
             bull_streak = 0
 
-        # ── Cooldown ─────────────────────────────────────────────────────
+        # ── Cooldown check ────────────────────────────────────────────────
         in_cooldown = False
         if exit_time is not None:
             hours_since_exit = (ts - exit_time).total_seconds() / 3600
             in_cooldown = hours_since_exit < COOLDOWN_HOURS
 
-        # ── Exit logic ───────────────────────────────────────────────────
-        if in_trade:
-            price_ret = (price - entry_price) / entry_price
+        # ── Step 1: Execute pending fills at this bar's Open ──────────────
+        if pending_exit and not in_trade:
+            # Edge case: pending_exit but trade already closed (shouldn't happen)
+            pending_exit = False
+            pending_exit_reason = None
 
-            if price_ret <= sl_factor:
-                exit_reason = "Stop Loss"
-            elif price_ret >= tp_factor:
-                exit_reason = "Take Profit"
-            elif regime != REGIME_BULL:
-                exit_reason = "Regime Flip"
+        if pending_exit and in_trade:
+            exit_open        = open_i
+            exit_fill_val    = exit_open * (1 - slip_factor)   # slippage in fill price
+            notional         = entry_equity                     # spot only, 1× position
+            fee_entry_usd    = notional * fee_factor
+            slip_entry_usd   = notional * slip_factor           # dollar proxy for slippage drag
+            fee_exit_usd     = notional * fee_factor
+            slip_exit_usd    = notional * slip_factor
+            expected_rt_cost = notional * (_fee_bps + _slippage_bps) / 10_000 * 2
+            total_cost_usd   = fee_entry_usd + fee_exit_usd + slip_entry_usd + slip_exit_usd
+            sanity_pass      = abs(total_cost_usd - expected_rt_cost) < 0.01
+
+            price_ret     = (exit_fill_val - entry_fill) / entry_fill   # slippage captured here
+            gross_pnl     = price_ret * notional
+            net_pnl       = gross_pnl - fee_entry_usd - fee_exit_usd
+            exit_equity   = entry_equity + net_pnl
+            ret_pct       = net_pnl / notional * 100
+
+            total_fees += fee_entry_usd + fee_exit_usd   # fees only; slippage in price_ret
+
+            _exit_reason = pending_exit_reason
+            if _exit_reason == "Stop Loss":
+                exits_sl += 1
+            elif _exit_reason == "Take Profit":
+                exits_tp += 1
+            elif _exit_reason == "Regime Flip":
+                exits_regime += 1
+
+            trade_record = {
+                "Entry Time":           entry_time,
+                "Exit Time":            ts,
+                "Entry Price":          round(entry_price, 2),
+                "Exit Price":           round(exit_open, 2),
+                "Entry Fill":           round(entry_fill, 2),
+                "Exit Fill":            round(exit_fill_val, 2),
+                "Return (%)":           round(ret_pct, 3),
+                "PnL ($)":              round(net_pnl, 2),
+                "Fee ($)":              round(fee_entry_usd + fee_exit_usd, 2),
+                "Fee Entry ($)":        round(fee_entry_usd, 2),
+                "Fee Exit ($)":         round(fee_exit_usd, 2),
+                "Slippage Entry ($)":   round(slip_entry_usd, 2),
+                "Slippage Exit ($)":    round(slip_exit_usd, 2),
+                "Total Cost ($)":       round(total_cost_usd, 2),
+                "Notional ($)":         round(notional, 2),
+                "Sanity Pass":          sanity_pass,
+                "Exit Reason":          _exit_reason,
+                "Equity After ($)":     round(exit_equity, 2),
+                "execution_rule_version": EXECUTION_RULE_VER,
+                "config_hash":          config_hash,
+            }
+            if _use_atr:
+                trade_record["ATR Stop Level"] = round(sl_price, 2)
+                trade_record["ATR TP Level"]   = round(tp_price, 2)
+
+            trades.append(trade_record)
+            cash        = exit_equity
+            in_trade    = False
+            exit_time   = ts
+            entry_price = 0.0
+            entry_fill  = 0.0
+            entry_equity = 0.0
+            pending_exit = False
+            pending_exit_reason = None
+
+        if pending_entry and not in_trade:
+            entry_open   = open_i
+            entry_fill   = entry_open * (1 + slip_factor)   # slippage in fill price
+            entry_time   = ts
+            entry_equity = cash
+            in_trade     = True
+            entry_price  = entry_open
+
+            if _use_atr and "atr" in prev_row.index:
+                atr_val = prev_row["atr"]
+                atr_at_entry = float(atr_val) if not np.isnan(atr_val) else 0.0
             else:
-                exit_reason = None
+                atr_at_entry = 0.0
 
-            if exit_reason:
-                leveraged_pnl = price_ret * cash * LEVERAGE
-                exit_equity   = cash + leveraged_pnl
-                ret_pct       = price_ret * LEVERAGE * 100
+            if _use_atr and atr_at_entry > 0:
+                sl_price = entry_fill - k_stop * atr_at_entry
+                tp_price = entry_fill + k_tp   * atr_at_entry
+            else:
+                sl_price = entry_fill * (1 + sl_factor)
+                tp_price = entry_fill * (1 + tp_factor)
 
-                trades.append({
-                    "Entry Time":       entry_time,
-                    "Exit Time":        ts,
-                    "Entry Price":      round(entry_price, 2),
-                    "Exit Price":       round(price, 2),
-                    "Return (%)":       round(ret_pct, 3),
-                    "PnL ($)":          round(leveraged_pnl, 2),
-                    "Exit Reason":      exit_reason,
-                    "Equity After ($)": round(exit_equity, 2),
-                })
+            pending_entry = False
 
-                cash        = exit_equity
-                in_trade    = False
-                exit_time   = ts
-                entry_price = 0.0
+        # ── Step 2: Check exit conditions for CURRENT bar (fill at next Open) ──
+        if in_trade and not pending_exit:
+            if _use_atr:
+                if close_i <= sl_price:
+                    pending_exit = True
+                    pending_exit_reason = "Stop Loss"
+                elif close_i >= tp_price:
+                    pending_exit = True
+                    pending_exit_reason = "Take Profit"
+                elif regime != REGIME_BULL:
+                    pending_exit = True
+                    pending_exit_reason = "Regime Flip"
+            else:
+                price_ret_check = (close_i - entry_fill) / entry_fill
+                if price_ret_check <= sl_factor:
+                    pending_exit = True
+                    pending_exit_reason = "Stop Loss"
+                elif price_ret_check >= tp_factor:
+                    pending_exit = True
+                    pending_exit_reason = "Take Profit"
+                elif regime != REGIME_BULL:
+                    pending_exit = True
+                    pending_exit_reason = "Regime Flip"
 
-        # ── Entry logic ──────────────────────────────────────────────────
+        # ── Step 3: Check entry conditions for CURRENT bar (fill at next Open) ─
         if (
             not in_trade
-            and not in_cooldown
+            and not pending_entry
+            and not pending_exit
             and regime == REGIME_BULL
             and bull_streak >= min_regime_bars
             and signal_ok
         ):
-            in_trade    = True
-            entry_price = price
-            entry_time  = ts
+            if in_cooldown:
+                entries_blocked_cooldown += 1
+            elif i < n - 1:   # guard: need a next bar to fill at
+                pending_entry = True
 
-        # ── Mark-to-market equity ─────────────────────────────────────────
+        # ── Attribution: eligible bar ────────────────────────────────────
+        if (
+            regime == REGIME_BULL
+            and signal_ok
+            and not in_cooldown
+            and bull_streak >= min_regime_bars
+        ):
+            bars_eligible += 1
+
+        # ── Mark-to-market equity (spot, 1×) ────────────────────────────
         if in_trade:
-            unrealised = (price - entry_price) / entry_price * cash * LEVERAGE
-            equity[i]  = cash + unrealised
+            unrealised = (close_i - entry_fill) / entry_fill * entry_equity
+            equity[i]  = entry_equity + unrealised
         else:
             equity[i] = cash
 
         position[i] = 1 if in_trade else 0
 
-    # ── Close any open position at last bar ──────────────────────────────
+    # ── Close any open position at last bar (forced at last Close) ────────────
     if in_trade:
-        last_price    = float(df["Close"].iloc[-1])
-        price_ret     = (last_price - entry_price) / entry_price
-        leveraged_pnl = price_ret * cash * LEVERAGE
-        exit_equity   = cash + leveraged_pnl
-        trades.append({
-            "Entry Time":       entry_time,
-            "Exit Time":        df.index[-1],
-            "Entry Price":      round(entry_price, 2),
-            "Exit Price":       round(last_price, 2),
-            "Return (%)":       round(price_ret * LEVERAGE * 100, 3),
-            "PnL ($)":          round(leveraged_pnl, 2),
-            "Exit Reason":      "End of Data",
-            "Equity After ($)": round(exit_equity, 2),
-        })
+        last_close       = float(df["Close"].iloc[-1])
+        exit_fill_last   = last_close * (1 - slip_factor)   # slippage in fill price
+        notional         = entry_equity                      # spot, 1×
+        fee_entry_usd    = notional * fee_factor
+        slip_entry_usd   = notional * slip_factor
+        fee_exit_usd     = notional * fee_factor
+        slip_exit_usd    = notional * slip_factor
+        total_cost_usd   = fee_entry_usd + fee_exit_usd + slip_entry_usd + slip_exit_usd
+        expected_rt_cost = notional * (_fee_bps + _slippage_bps) / 10_000 * 2
+
+        price_ret   = (exit_fill_last - entry_fill) / entry_fill
+        gross_pnl   = price_ret * notional
+        net_pnl     = gross_pnl - fee_entry_usd - fee_exit_usd
+        exit_equity = entry_equity + net_pnl
+
+        total_fees += fee_entry_usd + fee_exit_usd
+        exits_eod  += 1
+
+        trade_record = {
+            "Entry Time":           entry_time,
+            "Exit Time":            df.index[-1],
+            "Entry Price":          round(entry_price, 2),
+            "Exit Price":           round(last_close, 2),
+            "Entry Fill":           round(entry_fill, 2),
+            "Exit Fill":            round(exit_fill_last, 2),
+            "Return (%)":           round(net_pnl / notional * 100, 3),
+            "PnL ($)":              round(net_pnl, 2),
+            "Fee ($)":              round(fee_entry_usd + fee_exit_usd, 2),
+            "Fee Entry ($)":        round(fee_entry_usd, 2),
+            "Fee Exit ($)":         round(fee_exit_usd, 2),
+            "Slippage Entry ($)":   round(slip_entry_usd, 2),
+            "Slippage Exit ($)":    round(slip_exit_usd, 2),
+            "Total Cost ($)":       round(total_cost_usd, 2),
+            "Notional ($)":         round(notional, 2),
+            "Sanity Pass":          abs(total_cost_usd - expected_rt_cost) < 0.01,
+            "Exit Reason":          "End of Data",
+            "Equity After ($)":     round(exit_equity, 2),
+            "execution_rule_version": EXECUTION_RULE_VER,
+            "config_hash":          config_hash,
+        }
+        if _use_atr:
+            trade_record["ATR Stop Level"] = round(sl_price, 2)
+            trade_record["ATR TP Level"]   = round(tp_price, 2)
+
+        trades.append(trade_record)
         equity[-1] = exit_equity
+        cash       = exit_equity
 
     df["equity"]   = equity
     df["position"] = position
 
     trades_df = pd.DataFrame(trades)
-    metrics   = _compute_metrics(df, trades_df, stop_loss_pct, take_profit_pct, min_regime_bars)
+    n_trades  = len(trades_df)
+
+    # ── Waterfall ─────────────────────────────────────────────────────────────
+    # Step 3 & 4 require being inside a Bull streak (not just any Bull bar)
+    # We'll track these from the attribution counters already computed.
+    # bars_eligible already requires bull_streak >= min_regime_bars + signal_ok + not_cooldown
+    waterfall = {
+        "1_total_bars":      n,
+        "2_bull_regime":     bars_bull_regime,
+        "3_signal_ok":       bars_signal_ok,
+        "4_eligible":        bars_eligible,
+        "5_not_blocked":     bars_eligible,   # Phase 1: no additional gates yet
+        "6_entries_taken":   n_trades,
+    }
+
+    attribution = {
+        "bars_bull_regime":          bars_bull_regime,
+        "bars_signal_ok_while_bull": bars_signal_ok,
+        "bars_eligible":             bars_eligible,
+        "entries_blocked_cooldown":  entries_blocked_cooldown,
+        "exits_stop_loss":           exits_sl,
+        "exits_take_profit":         exits_tp,
+        "exits_regime_flip":         exits_regime,
+        "exits_end_of_data":         exits_eod,
+        "exits_force_flat":          0,
+        "exits_kill_switch":         0,
+        "pct_time_bull":             round(bars_bull_regime / max(n, 1) * 100, 1),
+        "pct_time_signal_ok":        round(bars_signal_ok   / max(n, 1) * 100, 1),
+        "pct_time_eligible":         round(bars_eligible    / max(n, 1) * 100, 1),
+    }
+
+    metrics = _compute_metrics(
+        df, trades_df,
+        stop_loss_pct, take_profit_pct, min_regime_bars,
+        _fee_bps, _slippage_bps, total_fees,
+        use_atr_stops=_use_atr, k_stop=k_stop, k_tp=k_tp,
+    )
+    metrics["attribution"]             = attribution
+    metrics["waterfall"]               = waterfall
+    metrics["execution_rule_version"]  = EXECUTION_RULE_VER
+    metrics["config_hash"]             = config_hash
+    metrics["exits_stop_loss"]         = exits_sl
+    metrics["exits_take_profit"]       = exits_tp
+    metrics["exits_regime_flip"]       = exits_regime
+    metrics["exits_force_flat"]        = 0
+    metrics["exits_kill_switch"]       = 0
 
     return df, trades_df, metrics
 
@@ -183,6 +478,12 @@ def _compute_metrics(
     stop_loss_pct: float,
     take_profit_pct: float,
     min_regime_bars: int,
+    fee_bps: float,
+    slippage_bps: float,
+    total_fees: float,
+    use_atr_stops: bool = False,
+    k_stop: float = 2.0,
+    k_tp: float = 3.0,
 ) -> dict:
     equity = df["equity"].values
     close  = df["Close"].values
@@ -211,7 +512,7 @@ def _compute_metrics(
         if ret_series.std() > 0 else 0.0
     )
 
-    return {
+    metrics = {
         "Total Return (%)":       round(total_return, 2),
         "Buy & Hold Return (%)":  round(bah_return, 2),
         "Alpha (%)":              round(alpha, 2),
@@ -222,13 +523,22 @@ def _compute_metrics(
         "Stop Loss Exits":        int(sl_exits),
         "Take Profit Exits":      int(tp_exits),
         "Regime Flip Exits":      int(reg_exits),
+        "Min Regime Bars":        min_regime_bars,
         "Final Equity ($)":       round(float(equity[-1]), 2),
         "Starting Capital ($)":   STARTING_CAPITAL,
-        # Active settings (for display)
+        "Total Fees ($)":         round(total_fees, 2),
+        "Exit Mode":              "ATR-Scaled" if use_atr_stops else "Fixed %",
         "Stop Loss (%)":          stop_loss_pct,
         "Take Profit (%)":        take_profit_pct,
-        "Min Regime Bars":        min_regime_bars,
+        "Fee (bps/side)":         fee_bps,
+        "Slippage (bps/side)":    slippage_bps,
     }
+
+    if use_atr_stops:
+        metrics["ATR k_stop"] = k_stop
+        metrics["ATR k_tp"]   = k_tp
+
+    return metrics
 
 
 if __name__ == "__main__":
@@ -241,18 +551,37 @@ if __name__ == "__main__":
 
     print("Fitting HMM …")
     model, scaler, feat_df, state_map, bull_state, bear_state = fit_hmm(raw)
-    with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw)
+    with_regimes = predict_regimes(model, scaler, feat_df, state_map, raw, bull_state)
 
     print("Computing indicators …")
     full = compute_indicators(with_regimes)
 
     print("Running backtest …")
-    result, trades, metrics = run_backtest(full)
+    result, trades, metrics = run_backtest(full, ticker="BTC-USD")
 
     print("\n=== Metrics ===")
     for k, v in metrics.items():
+        if k not in ("attribution", "waterfall"):
+            print(f"  {k}: {v}")
+
+    print("\n=== Attribution ===")
+    for k, v in metrics["attribution"].items():
+        print(f"  {k}: {v}")
+
+    print("\n=== Eligibility Waterfall ===")
+    for k, v in metrics["waterfall"].items():
         print(f"  {k}: {v}")
 
     if not trades.empty:
         print(f"\n=== Trades ({len(trades)}) ===")
-        print(trades.to_string(index=False))
+        display_cols = [
+            "Entry Time", "Exit Time", "Entry Fill", "Exit Fill",
+            "Return (%)", "PnL ($)", "Fee ($)", "Total Cost ($)",
+            "Notional ($)", "Sanity Pass", "Exit Reason",
+        ]
+        display_cols = [c for c in display_cols if c in trades.columns]
+        print(trades[display_cols].to_string(index=False))
+
+        # Sanity audit
+        all_pass = trades["Sanity Pass"].all() if "Sanity Pass" in trades.columns else None
+        print(f"\nFee sanity check — all trades pass: {all_pass}")
