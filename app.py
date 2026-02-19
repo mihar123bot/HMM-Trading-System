@@ -100,8 +100,8 @@ st.markdown(
 # Sidebar — live CONFIG editor
 # ──────────────────────────────────────────────────────────────────────────────
 
-def build_sidebar() -> tuple[str, dict]:
-    """Render sidebar controls and return (ticker, cfg)."""
+def build_sidebar() -> tuple[str, dict, dict]:
+    """Render sidebar controls and return (ticker, indicator_cfg, risk_cfg)."""
     st.sidebar.markdown("## Asset Selection")
     asset_name = st.sidebar.selectbox(
         "Select Asset",
@@ -120,19 +120,19 @@ def build_sidebar() -> tuple[str, dict]:
     cfg["votes_required"] = st.sidebar.slider("Min Votes Required (out of 8)", 1, 8, DEFAULT_CONFIG["votes_required"], 1)
 
     st.sidebar.markdown("### Entry Thresholds")
-    cfg["rsi_max"]            = st.sidebar.slider("RSI Max (< threshold)",  50, 100, DEFAULT_CONFIG["rsi_max"],                          1)
-    cfg["momentum_min_pct"]   = st.sidebar.slider("Min Momentum (%)",      0.0, 10.0, float(DEFAULT_CONFIG["momentum_min_pct"]),        0.1)
-    cfg["volatility_max_pct"] = st.sidebar.slider("Max Volatility (%)",    1.0, 20.0, float(DEFAULT_CONFIG["volatility_max_pct"]),      0.5)
-    cfg["adx_min"]            = st.sidebar.slider("Min ADX",                10,  50, DEFAULT_CONFIG["adx_min"],                          1)
+    cfg["rsi_max"]            = st.sidebar.slider("RSI Max (< threshold)",  50, 100, DEFAULT_CONFIG["rsi_max"],                      1)
+    cfg["momentum_min_pct"]   = st.sidebar.slider("Min Momentum (%)",      0.0, 10.0, float(DEFAULT_CONFIG["momentum_min_pct"]),    0.1)
+    cfg["volatility_max_pct"] = st.sidebar.slider("Max Volatility (%)",    1.0, 20.0, float(DEFAULT_CONFIG["volatility_max_pct"]),  0.5)
+    cfg["adx_min"]            = st.sidebar.slider("Min ADX",                10,  50, DEFAULT_CONFIG["adx_min"],                      1)
 
     st.sidebar.markdown("### Indicator Periods")
-    cfg["rsi_period"]        = st.sidebar.slider("RSI Period",             5,  50, DEFAULT_CONFIG["rsi_period"],        1)
-    cfg["momentum_period"]   = st.sidebar.slider("Momentum Period (bars)", 2,  50, DEFAULT_CONFIG["momentum_period"],   1)
-    cfg["volume_sma_period"] = st.sidebar.slider("Volume SMA Period",      5, 100, DEFAULT_CONFIG["volume_sma_period"], 1)
+    cfg["rsi_period"]        = st.sidebar.slider("RSI Period",               5,  50, DEFAULT_CONFIG["rsi_period"],        1)
+    cfg["momentum_period"]   = st.sidebar.slider("Momentum Period (bars)",   2,  50, DEFAULT_CONFIG["momentum_period"],   1)
+    cfg["volume_sma_period"] = st.sidebar.slider("Volume SMA Period",        5, 100, DEFAULT_CONFIG["volume_sma_period"], 1)
     cfg["volatility_period"] = st.sidebar.slider("Volatility Window (bars)", 6, 168, DEFAULT_CONFIG["volatility_period"], 1)
-    cfg["adx_period"]        = st.sidebar.slider("ADX Period",             5,  50, DEFAULT_CONFIG["adx_period"],        1)
-    cfg["ema_fast"]          = st.sidebar.slider("EMA Fast Period",        5, 100, DEFAULT_CONFIG["ema_fast"],          1)
-    cfg["ema_slow"]          = st.sidebar.slider("EMA Slow Period",       20, 500, DEFAULT_CONFIG["ema_slow"],          5)
+    cfg["adx_period"]        = st.sidebar.slider("ADX Period",               5,  50, DEFAULT_CONFIG["adx_period"],        1)
+    cfg["ema_fast"]          = st.sidebar.slider("EMA Fast Period",          5, 100, DEFAULT_CONFIG["ema_fast"],          1)
+    cfg["ema_slow"]          = st.sidebar.slider("EMA Slow Period",         20, 500, DEFAULT_CONFIG["ema_slow"],          5)
 
     st.sidebar.markdown("### MACD Settings")
     cfg["macd_fast"]   = st.sidebar.slider("MACD Fast",   2,  50, DEFAULT_CONFIG["macd_fast"],   1)
@@ -140,8 +140,18 @@ def build_sidebar() -> tuple[str, dict]:
     cfg["macd_signal"] = st.sidebar.slider("MACD Signal", 2,  30, DEFAULT_CONFIG["macd_signal"], 1)
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Default config is defined in `indicators.py → CONFIG`.")
-    return ticker, cfg
+    st.sidebar.markdown("## Risk Management")
+    risk = {}
+    risk["stop_loss_pct"]   = st.sidebar.slider("Stop Loss (%)",            0.5, 15.0, 3.0,  0.5,
+                                                  help="Exit if price drops this % from entry")
+    risk["take_profit_pct"] = st.sidebar.slider("Take Profit (%)",          0.5, 30.0, 4.0,  0.5,
+                                                  help="Exit if price rises this % from entry")
+    risk["min_regime_bars"] = st.sidebar.slider("Min Bull Regime Bars",     1,   24,   3,    1,
+                                                  help="Bull regime must persist N bars before entry is allowed")
+
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Indicator defaults defined in `indicators.py → CONFIG`.")
+    return ticker, cfg, risk
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -163,11 +173,16 @@ def fit_hmm_cached(ticker: str):
     return with_regimes, state_stats
 
 
-def run_pipeline(ticker: str, cfg: dict):
-    """Run indicators + backtest with the given ticker and config."""
+def run_pipeline(ticker: str, cfg: dict, risk: dict):
+    """Run indicators + backtest with the given ticker, indicator config, and risk config."""
     with_regimes, state_stats = fit_hmm_cached(ticker)
     full = compute_indicators(with_regimes, cfg=cfg)
-    result_df, trades_df, metrics = run_backtest(full)
+    result_df, trades_df, metrics = run_backtest(
+        full,
+        stop_loss_pct   = risk["stop_loss_pct"],
+        take_profit_pct = risk["take_profit_pct"],
+        min_regime_bars = risk["min_regime_bars"],
+    )
     current_signals = get_current_signals(full)
     return result_df, trades_df, metrics, state_stats, current_signals
 
@@ -349,7 +364,7 @@ def build_equity_chart(result_df: pd.DataFrame) -> go.Figure:
 
 def main():
     # ── Sidebar ──────────────────────────────────────────────────────────────
-    ticker, cfg = build_sidebar()
+    ticker, cfg, risk = build_sidebar()
     asset_name = TICKER_TO_NAME.get(ticker, ticker)
 
     # ── Header ───────────────────────────────────────────────────────────────
@@ -374,7 +389,7 @@ def main():
     # ── Pipeline ─────────────────────────────────────────────────────────────
     with st.spinner(f"Loading {ticker} data · Fitting HMM · Running backtest…"):
         try:
-            result_df, trades_df, metrics, state_stats, current_signals = run_pipeline(ticker, cfg)
+            result_df, trades_df, metrics, state_stats, current_signals = run_pipeline(ticker, cfg, risk)
         except Exception as e:
             st.error(f"Pipeline failed: {e}")
             st.exception(e)
@@ -444,15 +459,33 @@ def main():
     st.markdown("### Performance Metrics")
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     for col, label, value, help_text in [
-        (m1, "Total Return",  f"{metrics['Total Return (%)']:+.2f}%",    f"Start: ${STARTING_CAPITAL:,.0f}"),
-        (m2, "Alpha vs B&H",  f"{metrics['Alpha (%)']:+.2f}%",           f"B&H: {metrics['Buy & Hold Return (%)']:+.2f}%"),
-        (m3, "Win Rate",      f"{metrics['Win Rate (%)']:.1f}%",          f"{metrics['Total Trades']} trades"),
-        (m4, "Max Drawdown",  f"{metrics['Max Drawdown (%)']:.2f}%",      "Peak-to-trough"),
-        (m5, "Sharpe Ratio",  f"{metrics['Sharpe Ratio']:.3f}",           "Annualised (hourly)"),
-        (m6, "Final Equity",  f"${metrics['Final Equity ($)']:,.0f}",      "2.5× leveraged PnL"),
+        (m1, "Total Return",  f"{metrics['Total Return (%)']:+.2f}%",   f"Start: ${STARTING_CAPITAL:,.0f}"),
+        (m2, "Alpha vs B&H",  f"{metrics['Alpha (%)']:+.2f}%",          f"B&H: {metrics['Buy & Hold Return (%)']:+.2f}%"),
+        (m3, "Win Rate",      f"{metrics['Win Rate (%)']:.1f}%",         f"{metrics['Total Trades']} trades"),
+        (m4, "Max Drawdown",  f"{metrics['Max Drawdown (%)']:.2f}%",     "Peak-to-trough"),
+        (m5, "Sharpe Ratio",  f"{metrics['Sharpe Ratio']:.3f}",          "Annualised (hourly)"),
+        (m6, "Final Equity",  f"${metrics['Final Equity ($)']:,.0f}",    "2.5× leveraged PnL"),
     ]:
         with col:
             st.metric(label=label, value=value, help=help_text)
+
+    # ── Exit breakdown ────────────────────────────────────────────────────────
+    e1, e2, e3, e4 = st.columns(4)
+    for col, label, value, color in [
+        (e1, "Stop Loss Exits",    metrics["Stop Loss Exits"],    "#ff5252"),
+        (e2, "Take Profit Exits",  metrics["Take Profit Exits"],  "#69f0ae"),
+        (e3, "Regime Flip Exits",  metrics["Regime Flip Exits"],  "#f0a500"),
+        (e4, "Min Regime Bars",    metrics["Min Regime Bars"],    "#8b949e"),
+    ]:
+        with col:
+            st.markdown(
+                f'<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;'
+                f'padding:10px 16px;text-align:center;">'
+                f'<div style="color:#8b949e;font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;">{label}</div>'
+                f'<div style="color:{color};font-size:1.5rem;font-weight:800;">{value}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     st.markdown("---")
 
