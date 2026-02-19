@@ -114,29 +114,30 @@ def build_sidebar() -> tuple[str, dict]:
     st.sidebar.markdown("All changes trigger an instant backtest rerun.")
     st.sidebar.markdown("---")
 
-    st.sidebar.markdown("### Indicator Periods")
     cfg = {}
-    cfg["rsi_period"]        = st.sidebar.slider("RSI Period",            5,  50, DEFAULT_CONFIG["rsi_period"],       1)
-    cfg["momentum_period"]   = st.sidebar.slider("Momentum Period (bars)", 2,  50, DEFAULT_CONFIG["momentum_period"],  1)
-    cfg["volume_sma_period"] = st.sidebar.slider("Volume SMA Period",      5, 100, DEFAULT_CONFIG["volume_sma_period"],1)
-    cfg["volatility_period"] = st.sidebar.slider("Volatility Window (bars)",6, 168, DEFAULT_CONFIG["volatility_period"],1)
-    cfg["adx_period"]        = st.sidebar.slider("ADX Period",             5,  50, DEFAULT_CONFIG["adx_period"],       1)
-    cfg["ema_fast"]          = st.sidebar.slider("EMA Fast Period",        5, 100, DEFAULT_CONFIG["ema_fast"],         1)
-    cfg["ema_slow"]          = st.sidebar.slider("EMA Slow Period",       20, 500, DEFAULT_CONFIG["ema_slow"],         5)
-
-    st.sidebar.markdown("### MACD Settings")
-    cfg["macd_fast"]   = st.sidebar.slider("MACD Fast",   2, 50, DEFAULT_CONFIG["macd_fast"],   1)
-    cfg["macd_slow"]   = st.sidebar.slider("MACD Slow",   5, 100, DEFAULT_CONFIG["macd_slow"],   1)
-    cfg["macd_signal"] = st.sidebar.slider("MACD Signal", 2, 30, DEFAULT_CONFIG["macd_signal"],  1)
-
-    st.sidebar.markdown("### Entry Thresholds")
-    cfg["rsi_max"]            = st.sidebar.slider("RSI Max (< threshold)",       50, 100, DEFAULT_CONFIG["rsi_max"],            1)
-    cfg["momentum_min_pct"]   = st.sidebar.slider("Min Momentum (%)",           0.0, 10.0, float(DEFAULT_CONFIG["momentum_min_pct"]), 0.1)
-    cfg["volatility_max_pct"] = st.sidebar.slider("Max Volatility (%)",         1.0, 20.0, float(DEFAULT_CONFIG["volatility_max_pct"]), 0.5)
-    cfg["adx_min"]            = st.sidebar.slider("Min ADX",                    10,  50, DEFAULT_CONFIG["adx_min"],             1)
 
     st.sidebar.markdown("### Voting Gate")
     cfg["votes_required"] = st.sidebar.slider("Min Votes Required (out of 8)", 1, 8, DEFAULT_CONFIG["votes_required"], 1)
+
+    st.sidebar.markdown("### Entry Thresholds")
+    cfg["rsi_max"]            = st.sidebar.slider("RSI Max (< threshold)",  50, 100, DEFAULT_CONFIG["rsi_max"],                          1)
+    cfg["momentum_min_pct"]   = st.sidebar.slider("Min Momentum (%)",      0.0, 10.0, float(DEFAULT_CONFIG["momentum_min_pct"]),        0.1)
+    cfg["volatility_max_pct"] = st.sidebar.slider("Max Volatility (%)",    1.0, 20.0, float(DEFAULT_CONFIG["volatility_max_pct"]),      0.5)
+    cfg["adx_min"]            = st.sidebar.slider("Min ADX",                10,  50, DEFAULT_CONFIG["adx_min"],                          1)
+
+    st.sidebar.markdown("### Indicator Periods")
+    cfg["rsi_period"]        = st.sidebar.slider("RSI Period",             5,  50, DEFAULT_CONFIG["rsi_period"],        1)
+    cfg["momentum_period"]   = st.sidebar.slider("Momentum Period (bars)", 2,  50, DEFAULT_CONFIG["momentum_period"],   1)
+    cfg["volume_sma_period"] = st.sidebar.slider("Volume SMA Period",      5, 100, DEFAULT_CONFIG["volume_sma_period"], 1)
+    cfg["volatility_period"] = st.sidebar.slider("Volatility Window (bars)", 6, 168, DEFAULT_CONFIG["volatility_period"], 1)
+    cfg["adx_period"]        = st.sidebar.slider("ADX Period",             5,  50, DEFAULT_CONFIG["adx_period"],        1)
+    cfg["ema_fast"]          = st.sidebar.slider("EMA Fast Period",        5, 100, DEFAULT_CONFIG["ema_fast"],          1)
+    cfg["ema_slow"]          = st.sidebar.slider("EMA Slow Period",       20, 500, DEFAULT_CONFIG["ema_slow"],          5)
+
+    st.sidebar.markdown("### MACD Settings")
+    cfg["macd_fast"]   = st.sidebar.slider("MACD Fast",   2,  50, DEFAULT_CONFIG["macd_fast"],   1)
+    cfg["macd_slow"]   = st.sidebar.slider("MACD Slow",   5, 100, DEFAULT_CONFIG["macd_slow"],   1)
+    cfg["macd_signal"] = st.sidebar.slider("MACD Signal", 2,  30, DEFAULT_CONFIG["macd_signal"], 1)
 
     st.sidebar.markdown("---")
     st.sidebar.caption("Default config is defined in `indicators.py → CONFIG`.")
