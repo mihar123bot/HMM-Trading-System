@@ -67,9 +67,9 @@ CONFIG: dict = {
     # Set to False to exclude a signal from its bucket (and reduce bucket max by 1).
     "sig_rsi_on":           True,
     "sig_momentum_on":      True,
-    "sig_volume_on":        True,
+    "sig_volume_on":        False,
     "sig_volatility_on":    True,
-    "sig_adx_on":           True,
+    "sig_adx_on":           False,
     "sig_ema_fast_on":      True,
     "sig_ema_slow_on":      True,
     "sig_macd_on":          True,
@@ -78,22 +78,22 @@ CONFIG: dict = {
     "sig_pbull_slope_on":   True,   # p_bull increasing over p_bull_slope_period bars
 
     # ── Bucket voting ─────────────────────────────────────────────────────────
-    "trend_min":          1,     # of 3 (ema_fast, ema_slow, macd)
-    "strength_min":       1,     # of 1 (adx)
-    "participation_min":  1,     # of 1 (volume)
-    "risk_min":           1,     # of 3–4 (rsi, volatility, momentum [, confidence])
+    "trend_min":          2,     # of enabled trend signals
+    "strength_min":       0,     # disabled by default
+    "participation_min":  0,     # disabled by default
+    "risk_min":           2,     # of enabled risk signals
 
     # ── Stress / market quality gates (Phase 3 G, K) ─────────────────────────
     # range_1h = (High-Low)/Close; a spike bar is one where range_1h is large.
-    "stress_range_threshold": 0.03,   # (H-L)/C > 3% → stress spike
-    "stress_cooldown_hours":  12,     # hours to block entries after a stress spike
-    "stress_force_flat":      False,  # True → force-flat open position on stress spike
-    "market_quality_filter":  False,  # True → block entries on stress spikes
+    "stress_range_threshold": 0.04,   # (H-L)/C > 4% → stress spike
+    "stress_cooldown_hours":  24,     # hours to block entries after a stress spike
+    "stress_force_flat":      True,   # True → force-flat open position on stress spike
+    "market_quality_filter":  True,   # True → block entries on stress spikes
 
     # ── Kill switch (Phase 3 G) ───────────────────────────────────────────────
-    "kill_switch_enabled":    False,
-    "kill_switch_dd_pct":     10.0,   # rolling drawdown % from HWM → trigger
-    "kill_switch_cooldown_h": 48,     # hours disabled after trigger
+    "kill_switch_enabled":    True,
+    "kill_switch_dd_pct":     9.0,    # rolling drawdown % from HWM → trigger
+    "kill_switch_cooldown_h": 24,     # hours disabled after trigger
 
     # ── Volatility-targeted position sizing (Phase 3 J) ───────────────────────
     "vol_targeting_enabled":  False,

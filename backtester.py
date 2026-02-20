@@ -71,9 +71,9 @@ COOLDOWN_HOURS       = 12
 EXECUTION_RULE_VER   = "v1_next_open"
 
 # Risk management defaults (overridable via run_backtest kwargs)
-STOP_LOSS_PCT     = -3.0
+STOP_LOSS_PCT     = -2.5
 TAKE_PROFIT_PCT   =  4.0
-MIN_REGIME_BARS   =  3
+MIN_REGIME_BARS   =  2
 
 REGIME_BULL = "Bull"
 
@@ -128,29 +128,29 @@ def run_backtest(
     k_stop:           float = 2.0,
     k_tp:             float = 3.0,
     # Trailing stop
-    use_trailing_stop:    bool  = False,
+    use_trailing_stop:    bool  = True,
     trailing_stop_pct:    float = 2.0,   # fixed-% fallback distance (when no ATR)
-    trail_atr_mult:       float = 1.25,  # ATR multiples for trailing stop level
+    trail_atr_mult:       float = 2.5,   # ATR multiples for trailing stop level
     trail_activation_pct: float = 1.5,   # only activate trailing stop after this % gain
     # Regime-flip grace period
-    regime_flip_grace_bars: int = 0,
+    regime_flip_grace_bars: int = 2,
     # p_bull position sizing (E)
-    use_pbull_sizing:     bool  = False,
+    use_pbull_sizing:     bool  = True,
     # Phase 3 J — vol targeting
     use_vol_targeting:  bool  = False,
     vol_target_pct:     float = 30.0,
     vol_target_min_mult: float = 0.25,
     vol_target_max_mult: float = 1.0,
     # Phase 3 G — kill switch
-    kill_switch_enabled:   bool  = False,
-    kill_switch_dd_pct:    float = 10.0,
-    kill_switch_cooldown_h: int  = 48,
+    kill_switch_enabled:   bool  = True,
+    kill_switch_dd_pct:    float = 9.0,
+    kill_switch_cooldown_h: int  = 24,
     # Phase 3 K — market quality filter
-    use_market_quality_filter: bool  = False,
-    stress_range_threshold:    float = 0.03,
+    use_market_quality_filter: bool  = True,
+    stress_range_threshold:    float = 0.04,
     # Phase 3 G — stress force-flat
-    stress_force_flat:     bool  = False,
-    stress_cooldown_hours: int   = 12,
+    stress_force_flat:     bool  = True,
+    stress_cooldown_hours: int   = 24,
     # External gate columns (Phase 4 — if present in data)
     use_external_gates: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:

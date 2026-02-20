@@ -1,0 +1,2811 @@
+{
+  "generated_utc": "2026-02-19T23:45:45.616011",
+  "ticker": "BTC-USD",
+  "train_window_days": 180,
+  "test_window_days": 14,
+  "lockbox_pct": 0.2,
+  "indicator_config": {
+    "trend_min": 4,
+    "sig_ema_fast_on": true,
+    "sig_ema_slow_on": true,
+    "sig_macd_on": false,
+    "sig_roc_on": true,
+    "sig_pbull_slope_on": true,
+    "strength_min": 0,
+    "sig_adx_on": false,
+    "participation_min": 0,
+    "sig_volume_on": false,
+    "risk_min": 1,
+    "sig_rsi_on": true,
+    "sig_volatility_on": true,
+    "sig_momentum_on": true,
+    "sig_confidence_on": true,
+    "p_bull_min": 0.55,
+    "stress_range_threshold": 0.03,
+    "rsi_max": 90,
+    "momentum_min_pct": 1.0,
+    "volatility_max_pct": 80.0,
+    "adx_min": 25,
+    "rsi_period": 14,
+    "momentum_period": 5,
+    "volume_sma_period": 10,
+    "volatility_period": 24,
+    "adx_period": 14,
+    "atr_period": 14,
+    "ema_fast": 20,
+    "ema_slow": 50,
+    "roc_period": 8,
+    "p_bull_slope_period": 3,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9
+  },
+  "risk_config": {
+    "stop_loss_pct": -2.5,
+    "take_profit_pct": 6.0,
+    "min_regime_bars": 3,
+    "regime_flip_grace_bars": 2,
+    "use_pbull_sizing": true,
+    "fee_bps": 5,
+    "slippage_bps": 3,
+    "use_atr_stops": false,
+    "k_stop": 2.0,
+    "k_tp": 3.0,
+    "use_trailing_stop": false,
+    "trail_atr_mult": 1.25,
+    "trail_activation_pct": 1.5,
+    "trailing_stop_pct": 2.0,
+    "kill_switch_enabled": true,
+    "kill_switch_dd_pct": 10.0,
+    "kill_switch_cooldown_h": 48,
+    "use_market_quality_filter": true,
+    "stress_force_flat": false,
+    "stress_range_threshold": 0.03,
+    "stress_cooldown_hours": 12,
+    "use_vol_targeting": false,
+    "vol_target_pct": 30.0,
+    "vol_target_min_mult": 0.25,
+    "vol_target_max_mult": 1.0
+  },
+  "config_hash": "0110e56f",
+  "execution_rule_version": "v1_next_open",
+  "n_folds": 25,
+  "fold_metrics": [
+    {
+      "Fold": 1,
+      "Train Start": "2024-04-19",
+      "Train End": "2024-10-15",
+      "Test Start": "2024-10-16",
+      "Test End": "2024-10-29",
+      "_train_end_ts": "2024-10-15 23:00:00+00:00",
+      "_test_start_ts": "2024-10-16 00:00:00+00:00",
+      "Trades": 2,
+      "Total Return (%)": 6.11,
+      "Win Rate (%)": 50.0,
+      "Max Drawdown (%)": -1.71,
+      "Sharpe Ratio": 9.218,
+      "Total Fees ($)": 19.94,
+      "attribution": {
+        "bars_bull_regime": 138,
+        "bars_signal_ok_while_bull": 21,
+        "bars_eligible": 14,
+        "entries_blocked_cooldown": 3,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 1,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 41.1,
+        "pct_time_signal_ok": 6.2,
+        "pct_time_eligible": 4.2
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 138,
+        "3_signal_ok": 21,
+        "4_eligible": 14,
+        "5_not_blocked": 14,
+        "6_entries_taken": 2
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          1,
+          3
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 1 (occ=20.4%  mean=+0.2533%  std=0.3345%  A_ss=0.484) | state 3 (occ=25.7%  mean=+0.1831%  std=0.5420%  A_ss=0.907)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 114,
+            "pct_train": 13.5,
+            "mean_ret_train_pct": -0.5556,
+            "std_ret_train_pct": 0.4836,
+            "model_mean_scaled": -0.7943,
+            "A_ss": 0.365
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 173,
+            "pct_train": 20.4,
+            "mean_ret_train_pct": 0.2533,
+            "std_ret_train_pct": 0.3345,
+            "model_mean_scaled": 0.4146,
+            "A_ss": 0.484
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 53,
+            "pct_train": 6.3,
+            "mean_ret_train_pct": -0.2209,
+            "std_ret_train_pct": 1.7096,
+            "model_mean_scaled": -0.347,
+            "A_ss": 0.634
+          },
+          {
+            "state": 3,
+            "label": "Bull",
+            "count_train": 217,
+            "pct_train": 25.7,
+            "mean_ret_train_pct": 0.1831,
+            "std_ret_train_pct": 0.542,
+            "model_mean_scaled": 0.2948,
+            "A_ss": 0.907
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 289,
+            "pct_train": 34.2,
+            "mean_ret_train_pct": -0.0569,
+            "std_ret_train_pct": 0.2786,
+            "model_mean_scaled": -0.077,
+            "A_ss": 0.825
+          }
+        ],
+        "pct_time_bull_train": 46.1,
+        "pct_time_bull_test": 44.0,
+        "count_bull_test": 33,
+        "total_test_bars": 75
+      }
+    },
+    {
+      "Fold": 2,
+      "Train Start": "2024-05-03",
+      "Train End": "2024-10-29",
+      "Test Start": "2024-10-30",
+      "Test End": "2024-11-12",
+      "_train_end_ts": "2024-10-29 23:00:00+00:00",
+      "_test_start_ts": "2024-10-30 00:00:00+00:00",
+      "Trades": 3,
+      "Total Return (%)": 14.3,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -2.1,
+      "Sharpe Ratio": 13.043,
+      "Total Fees ($)": 31.84,
+      "attribution": {
+        "bars_bull_regime": 152,
+        "bars_signal_ok_while_bull": 33,
+        "bars_eligible": 9,
+        "entries_blocked_cooldown": 9,
+        "entries_blocked_gate": 3,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 2,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 45.2,
+        "pct_time_signal_ok": 9.8,
+        "pct_time_eligible": 2.7
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 152,
+        "3_signal_ok": 33,
+        "4_eligible": 9,
+        "5_not_blocked": 6,
+        "6_entries_taken": 3
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 4 (occ=16.1%  mean=+0.5174%  std=0.7721%  A_ss=0.703)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 144,
+            "pct_train": 16.6,
+            "mean_ret_train_pct": -0.4122,
+            "std_ret_train_pct": 0.4694,
+            "model_mean_scaled": -0.644,
+            "A_ss": 0.465
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 191,
+            "pct_train": 22.1,
+            "mean_ret_train_pct": -0.0555,
+            "std_ret_train_pct": 0.3618,
+            "model_mean_scaled": -0.0946,
+            "A_ss": 0.831
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 300,
+            "pct_train": 34.6,
+            "mean_ret_train_pct": 0.0765,
+            "std_ret_train_pct": 0.2749,
+            "model_mean_scaled": 0.1423,
+            "A_ss": 0.763
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 92,
+            "pct_train": 10.6,
+            "mean_ret_train_pct": -0.2926,
+            "std_ret_train_pct": 0.9969,
+            "model_mean_scaled": -0.4667,
+            "A_ss": 0.799
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 139,
+            "pct_train": 16.1,
+            "mean_ret_train_pct": 0.5174,
+            "std_ret_train_pct": 0.7721,
+            "model_mean_scaled": 0.8368,
+            "A_ss": 0.703
+          }
+        ],
+        "pct_time_bull_train": 16.1,
+        "pct_time_bull_test": 43.6,
+        "count_bull_test": 44,
+        "total_test_bars": 101
+      }
+    },
+    {
+      "Fold": 3,
+      "Train Start": "2024-05-17",
+      "Train End": "2024-11-12",
+      "Test Start": "2024-11-13",
+      "Test End": "2024-11-26",
+      "_train_end_ts": "2024-11-12 23:00:00+00:00",
+      "_test_start_ts": "2024-11-13 00:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": -0.31,
+      "Win Rate (%)": 0.0,
+      "Max Drawdown (%)": -1.87,
+      "Sharpe Ratio": -0.463,
+      "Total Fees ($)": 7.65,
+      "attribution": {
+        "bars_bull_regime": 124,
+        "bars_signal_ok_while_bull": 7,
+        "bars_eligible": 2,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 36.9,
+        "pct_time_signal_ok": 2.1,
+        "pct_time_eligible": 0.6
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 124,
+        "3_signal_ok": 7,
+        "4_eligible": 2,
+        "5_not_blocked": 2,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          3
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 3 (occ=10.2%  mean=+0.9206%  std=0.8190%  A_ss=0.332)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 101,
+            "pct_train": 11.1,
+            "mean_ret_train_pct": -0.4607,
+            "std_ret_train_pct": 0.9548,
+            "model_mean_scaled": -0.7044,
+            "A_ss": 0.73
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 153,
+            "pct_train": 16.7,
+            "mean_ret_train_pct": -0.3627,
+            "std_ret_train_pct": 0.4077,
+            "model_mean_scaled": -0.5713,
+            "A_ss": 0.525
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 350,
+            "pct_train": 38.3,
+            "mean_ret_train_pct": 0.0511,
+            "std_ret_train_pct": 0.2791,
+            "model_mean_scaled": 0.0726,
+            "A_ss": 0.77
+          },
+          {
+            "state": 3,
+            "label": "Bull",
+            "count_train": 93,
+            "pct_train": 10.2,
+            "mean_ret_train_pct": 0.9206,
+            "std_ret_train_pct": 0.819,
+            "model_mean_scaled": 1.4021,
+            "A_ss": 0.332
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 217,
+            "pct_train": 23.7,
+            "mean_ret_train_pct": 0.0317,
+            "std_ret_train_pct": 0.3425,
+            "model_mean_scaled": 0.0301,
+            "A_ss": 0.82
+          }
+        ],
+        "pct_time_bull_train": 10.2,
+        "pct_time_bull_test": 24.0,
+        "count_bull_test": 12,
+        "total_test_bars": 50
+      }
+    },
+    {
+      "Fold": 4,
+      "Train Start": "2024-05-31",
+      "Train End": "2024-11-26",
+      "Test Start": "2024-11-27",
+      "Test End": "2024-12-10",
+      "_train_end_ts": "2024-11-26 23:00:00+00:00",
+      "_test_start_ts": "2024-11-27 00:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 78,
+        "bars_signal_ok_while_bull": 11,
+        "bars_eligible": 3,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 3,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 23.2,
+        "pct_time_signal_ok": 3.3,
+        "pct_time_eligible": 0.9
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 78,
+        "3_signal_ok": 11,
+        "4_eligible": 3,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          4
+        ],
+        "bear_state": 3,
+        "bull_label_reason": "Bull states: state 4 (occ=20.4%  mean=+0.5388%  std=0.7299%  A_ss=0.719)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 197,
+            "pct_train": 22.2,
+            "mean_ret_train_pct": -0.0177,
+            "std_ret_train_pct": 0.352,
+            "model_mean_scaled": -0.0409,
+            "A_ss": 0.834
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 158,
+            "pct_train": 17.8,
+            "mean_ret_train_pct": -0.1217,
+            "std_ret_train_pct": 0.503,
+            "model_mean_scaled": -0.1991,
+            "A_ss": 0.733
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 264,
+            "pct_train": 29.7,
+            "mean_ret_train_pct": -0.0433,
+            "std_ret_train_pct": 0.2708,
+            "model_mean_scaled": -0.0782,
+            "A_ss": 0.844
+          },
+          {
+            "state": 3,
+            "label": "Bear",
+            "count_train": 89,
+            "pct_train": 10.0,
+            "mean_ret_train_pct": -0.63,
+            "std_ret_train_pct": 1.0481,
+            "model_mean_scaled": -0.9147,
+            "A_ss": 0.611
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 181,
+            "pct_train": 20.4,
+            "mean_ret_train_pct": 0.5388,
+            "std_ret_train_pct": 0.7299,
+            "model_mean_scaled": 0.7964,
+            "A_ss": 0.719
+          }
+        ],
+        "pct_time_bull_train": 20.4,
+        "pct_time_bull_test": 22.9,
+        "count_bull_test": 19,
+        "total_test_bars": 83
+      }
+    },
+    {
+      "Fold": 5,
+      "Train Start": "2024-06-14",
+      "Train End": "2024-12-10",
+      "Test Start": "2024-12-11",
+      "Test End": "2024-12-24",
+      "_train_end_ts": "2024-12-10 23:00:00+00:00",
+      "_test_start_ts": "2024-12-11 00:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": -1.5,
+      "Win Rate (%)": 0.0,
+      "Max Drawdown (%)": -2.32,
+      "Sharpe Ratio": -4.661,
+      "Total Fees ($)": 5.53,
+      "attribution": {
+        "bars_bull_regime": 71,
+        "bars_signal_ok_while_bull": 5,
+        "bars_eligible": 1,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 1,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 21.1,
+        "pct_time_signal_ok": 1.5,
+        "pct_time_eligible": 0.3
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 71,
+        "3_signal_ok": 5,
+        "4_eligible": 1,
+        "5_not_blocked": 1,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          1,
+          2
+        ],
+        "bear_state": 3,
+        "bull_label_reason": "Bull states: state 1 (occ=20.4%  mean=+0.3174%  std=0.2731%  A_ss=0.292) | state 2 (occ=20.1%  mean=+0.4792%  std=0.7905%  A_ss=0.800)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 211,
+            "pct_train": 24.0,
+            "mean_ret_train_pct": -0.2473,
+            "std_ret_train_pct": 0.257,
+            "model_mean_scaled": -0.3608,
+            "A_ss": 0.399
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 180,
+            "pct_train": 20.4,
+            "mean_ret_train_pct": 0.3174,
+            "std_ret_train_pct": 0.2731,
+            "model_mean_scaled": 0.4218,
+            "A_ss": 0.292
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 177,
+            "pct_train": 20.1,
+            "mean_ret_train_pct": 0.4792,
+            "std_ret_train_pct": 0.7905,
+            "model_mean_scaled": 0.7031,
+            "A_ss": 0.8
+          },
+          {
+            "state": 3,
+            "label": "Bear",
+            "count_train": 106,
+            "pct_train": 12.0,
+            "mean_ret_train_pct": -0.6901,
+            "std_ret_train_pct": 1.0314,
+            "model_mean_scaled": -0.9347,
+            "A_ss": 0.557
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 207,
+            "pct_train": 23.5,
+            "mean_ret_train_pct": -0.0297,
+            "std_ret_train_pct": 0.3816,
+            "model_mean_scaled": -0.0647,
+            "A_ss": 0.791
+          }
+        ],
+        "pct_time_bull_train": 40.5,
+        "pct_time_bull_test": 31.8,
+        "count_bull_test": 14,
+        "total_test_bars": 44
+      }
+    },
+    {
+      "Fold": 6,
+      "Train Start": "2024-06-28",
+      "Train End": "2024-12-24",
+      "Test Start": "2024-12-25",
+      "Test End": "2025-01-08",
+      "_train_end_ts": "2024-12-24 23:00:00+00:00",
+      "_test_start_ts": "2024-12-25 00:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 6,
+        "bars_signal_ok_while_bull": 5,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 1.8,
+        "pct_time_signal_ok": 1.5,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 6,
+        "3_signal_ok": 5,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          4
+        ],
+        "bear_state": 1,
+        "bull_label_reason": "Bull states: state 4 (occ=14.7%  mean=+0.5571%  std=0.8847%  A_ss=0.613)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 106,
+            "pct_train": 12.4,
+            "mean_ret_train_pct": 0.0796,
+            "std_ret_train_pct": 0.6481,
+            "model_mean_scaled": 0.0941,
+            "A_ss": 0.902
+          },
+          {
+            "state": 1,
+            "label": "Bear",
+            "count_train": 134,
+            "pct_train": 15.6,
+            "mean_ret_train_pct": -0.4849,
+            "std_ret_train_pct": 1.0254,
+            "model_mean_scaled": -0.6737,
+            "A_ss": 0.643
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 247,
+            "pct_train": 28.8,
+            "mean_ret_train_pct": -0.0144,
+            "std_ret_train_pct": 0.3711,
+            "model_mean_scaled": -0.0396,
+            "A_ss": 0.816
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 244,
+            "pct_train": 28.5,
+            "mean_ret_train_pct": -0.006,
+            "std_ret_train_pct": 0.3152,
+            "model_mean_scaled": -0.0196,
+            "A_ss": 0.838
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 126,
+            "pct_train": 14.7,
+            "mean_ret_train_pct": 0.5571,
+            "std_ret_train_pct": 0.8847,
+            "model_mean_scaled": 0.7848,
+            "A_ss": 0.613
+          }
+        ],
+        "pct_time_bull_train": 14.7,
+        "pct_time_bull_test": 7.6,
+        "count_bull_test": 6,
+        "total_test_bars": 79
+      }
+    },
+    {
+      "Fold": 7,
+      "Train Start": "2024-07-12",
+      "Train End": "2025-01-08",
+      "Test Start": "2025-01-08",
+      "Test End": "2025-01-22",
+      "_train_end_ts": "2025-01-08 00:00:00+00:00",
+      "_test_start_ts": "2025-01-08 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 19,
+        "bars_signal_ok_while_bull": 8,
+        "bars_eligible": 1,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 1,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 5.7,
+        "pct_time_signal_ok": 2.4,
+        "pct_time_eligible": 0.3
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 19,
+        "3_signal_ok": 8,
+        "4_eligible": 1,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2
+        ],
+        "bear_state": 3,
+        "bull_label_reason": "Bull states: state 2 (occ=13.5%  mean=+0.8984%  std=0.8197%  A_ss=0.508)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 248,
+            "pct_train": 28.4,
+            "mean_ret_train_pct": -0.0375,
+            "std_ret_train_pct": 0.3814,
+            "model_mean_scaled": -0.0731,
+            "A_ss": 0.851
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 114,
+            "pct_train": 13.1,
+            "mean_ret_train_pct": -0.3789,
+            "std_ret_train_pct": 0.5142,
+            "model_mean_scaled": -0.5419,
+            "A_ss": 0.497
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 118,
+            "pct_train": 13.5,
+            "mean_ret_train_pct": 0.8984,
+            "std_ret_train_pct": 0.8197,
+            "model_mean_scaled": 1.2369,
+            "A_ss": 0.508
+          },
+          {
+            "state": 3,
+            "label": "Bear",
+            "count_train": 95,
+            "pct_train": 10.9,
+            "mean_ret_train_pct": -0.7261,
+            "std_ret_train_pct": 0.9151,
+            "model_mean_scaled": -0.9724,
+            "A_ss": 0.65
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 298,
+            "pct_train": 34.1,
+            "mean_ret_train_pct": 0.0857,
+            "std_ret_train_pct": 0.2836,
+            "model_mean_scaled": 0.1089,
+            "A_ss": 0.732
+          }
+        ],
+        "pct_time_bull_train": 13.5,
+        "pct_time_bull_test": 14.3,
+        "count_bull_test": 9,
+        "total_test_bars": 63
+      }
+    },
+    {
+      "Fold": 8,
+      "Train Start": "2024-07-26",
+      "Train End": "2025-01-22",
+      "Test Start": "2025-01-22",
+      "Test End": "2025-02-05",
+      "_train_end_ts": "2025-01-22 00:00:00+00:00",
+      "_test_start_ts": "2025-01-22 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 3,
+        "bars_signal_ok_while_bull": 1,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 0.9,
+        "pct_time_signal_ok": 0.3,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 3,
+        "3_signal_ok": 1,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 2 (occ=13.0%  mean=+0.9225%  std=0.8565%  A_ss=0.464)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 120,
+            "pct_train": 13.8,
+            "mean_ret_train_pct": -0.5649,
+            "std_ret_train_pct": 1.1121,
+            "model_mean_scaled": -0.7256,
+            "A_ss": 0.566
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 301,
+            "pct_train": 34.7,
+            "mean_ret_train_pct": -0.0331,
+            "std_ret_train_pct": 0.4064,
+            "model_mean_scaled": -0.0664,
+            "A_ss": 0.85
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 113,
+            "pct_train": 13.0,
+            "mean_ret_train_pct": 0.9225,
+            "std_ret_train_pct": 0.8565,
+            "model_mean_scaled": 1.226,
+            "A_ss": 0.464
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 161,
+            "pct_train": 18.6,
+            "mean_ret_train_pct": -0.0491,
+            "std_ret_train_pct": 0.3219,
+            "model_mean_scaled": -0.0825,
+            "A_ss": 0.782
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 172,
+            "pct_train": 19.8,
+            "mean_ret_train_pct": -0.0407,
+            "std_ret_train_pct": 0.2935,
+            "model_mean_scaled": -0.0811,
+            "A_ss": 0.845
+          }
+        ],
+        "pct_time_bull_train": 13.0,
+        "pct_time_bull_test": 4.3,
+        "count_bull_test": 3,
+        "total_test_bars": 69
+      }
+    },
+    {
+      "Fold": 9,
+      "Train Start": "2024-08-09",
+      "Train End": "2025-02-05",
+      "Test Start": "2025-02-05",
+      "Test End": "2025-02-19",
+      "_train_end_ts": "2025-02-05 00:00:00+00:00",
+      "_test_start_ts": "2025-02-05 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 0,
+        "bars_signal_ok_while_bull": 0,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 0.0,
+        "pct_time_signal_ok": 0.0,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 0,
+        "3_signal_ok": 0,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          1,
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 1 (occ=19.1%  mean=+0.1319%  std=1.0530%  A_ss=0.775) | state 4 (occ=16.9%  mean=+0.4719%  std=0.5676%  A_ss=0.652)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 67,
+            "pct_train": 7.6,
+            "mean_ret_train_pct": -0.9194,
+            "std_ret_train_pct": 0.6882,
+            "model_mean_scaled": -1.2638,
+            "A_ss": 0.281
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 169,
+            "pct_train": 19.1,
+            "mean_ret_train_pct": 0.1319,
+            "std_ret_train_pct": 1.053,
+            "model_mean_scaled": 0.1552,
+            "A_ss": 0.775
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 286,
+            "pct_train": 32.3,
+            "mean_ret_train_pct": -0.0367,
+            "std_ret_train_pct": 0.3678,
+            "model_mean_scaled": -0.0924,
+            "A_ss": 0.831
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 213,
+            "pct_train": 24.1,
+            "mean_ret_train_pct": -0.0107,
+            "std_ret_train_pct": 0.2817,
+            "model_mean_scaled": -0.0505,
+            "A_ss": 0.825
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 150,
+            "pct_train": 16.9,
+            "mean_ret_train_pct": 0.4719,
+            "std_ret_train_pct": 0.5676,
+            "model_mean_scaled": 0.6669,
+            "A_ss": 0.652
+          }
+        ],
+        "pct_time_bull_train": 36.0,
+        "pct_time_bull_test": 0.0,
+        "count_bull_test": 0,
+        "total_test_bars": 22
+      }
+    },
+    {
+      "Fold": 10,
+      "Train Start": "2024-08-23",
+      "Train End": "2025-02-19",
+      "Test Start": "2025-02-19",
+      "Test End": "2025-03-05",
+      "_train_end_ts": "2025-02-19 00:00:00+00:00",
+      "_test_start_ts": "2025-02-19 01:00:00+00:00",
+      "Trades": 2,
+      "Total Return (%)": 4.87,
+      "Win Rate (%)": 50.0,
+      "Max Drawdown (%)": -4.8,
+      "Sharpe Ratio": 3.88,
+      "Total Fees ($)": 18.85,
+      "attribution": {
+        "bars_bull_regime": 184,
+        "bars_signal_ok_while_bull": 5,
+        "bars_eligible": 5,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 1,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 1,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 54.8,
+        "pct_time_signal_ok": 1.5,
+        "pct_time_eligible": 1.5
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 184,
+        "3_signal_ok": 5,
+        "4_eligible": 5,
+        "5_not_blocked": 5,
+        "6_entries_taken": 2
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2,
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 2 (occ=16.4%  mean=+0.1618%  std=1.3658%  A_ss=0.571) | state 4 (occ=23.9%  mean=+0.2179%  std=0.2573%  A_ss=0.437)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 140,
+            "pct_train": 16.8,
+            "mean_ret_train_pct": -0.2967,
+            "std_ret_train_pct": 0.2582,
+            "model_mean_scaled": -0.4256,
+            "A_ss": 0.322
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 257,
+            "pct_train": 30.9,
+            "mean_ret_train_pct": -0.0376,
+            "std_ret_train_pct": 0.3948,
+            "model_mean_scaled": -0.0981,
+            "A_ss": 0.8
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 136,
+            "pct_train": 16.4,
+            "mean_ret_train_pct": 0.1618,
+            "std_ret_train_pct": 1.3658,
+            "model_mean_scaled": 0.1807,
+            "A_ss": 0.571
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 99,
+            "pct_train": 11.9,
+            "mean_ret_train_pct": 0.0578,
+            "std_ret_train_pct": 0.6564,
+            "model_mean_scaled": 0.0474,
+            "A_ss": 0.904
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 199,
+            "pct_train": 23.9,
+            "mean_ret_train_pct": 0.2179,
+            "std_ret_train_pct": 0.2573,
+            "model_mean_scaled": 0.2744,
+            "A_ss": 0.437
+          }
+        ],
+        "pct_time_bull_train": 40.3,
+        "pct_time_bull_test": 36.7,
+        "count_bull_test": 22,
+        "total_test_bars": 60
+      }
+    },
+    {
+      "Fold": 11,
+      "Train Start": "2024-09-06",
+      "Train End": "2025-03-05",
+      "Test Start": "2025-03-05",
+      "Test End": "2025-03-19",
+      "_train_end_ts": "2025-03-05 00:00:00+00:00",
+      "_test_start_ts": "2025-03-05 01:00:00+00:00",
+      "Trades": 2,
+      "Total Return (%)": -3.87,
+      "Win Rate (%)": 0.0,
+      "Max Drawdown (%)": -8.53,
+      "Sharpe Ratio": -3.027,
+      "Total Fees ($)": 15.76,
+      "attribution": {
+        "bars_bull_regime": 270,
+        "bars_signal_ok_while_bull": 5,
+        "bars_eligible": 2,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 1,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 80.4,
+        "pct_time_signal_ok": 1.5,
+        "pct_time_eligible": 0.6
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 270,
+        "3_signal_ok": 5,
+        "4_eligible": 2,
+        "5_not_blocked": 2,
+        "6_entries_taken": 2
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          1,
+          2,
+          3
+        ],
+        "bear_state": 4,
+        "bull_label_reason": "Bull states: state 1 (occ=32.3%  mean=+0.1756%  std=0.2501%  A_ss=0.562) | state 2 (occ=18.8%  mean=+0.4823%  std=0.7832%  A_ss=0.752) | state 3 (occ=22.3%  mean=+0.1128%  std=0.5950%  A_ss=0.776)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 151,
+            "pct_train": 18.2,
+            "mean_ret_train_pct": -0.3595,
+            "std_ret_train_pct": 0.3002,
+            "model_mean_scaled": -0.5042,
+            "A_ss": 0.37
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 268,
+            "pct_train": 32.3,
+            "mean_ret_train_pct": 0.1756,
+            "std_ret_train_pct": 0.2501,
+            "model_mean_scaled": 0.2164,
+            "A_ss": 0.562
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 156,
+            "pct_train": 18.8,
+            "mean_ret_train_pct": 0.4823,
+            "std_ret_train_pct": 0.7832,
+            "model_mean_scaled": 0.6596,
+            "A_ss": 0.752
+          },
+          {
+            "state": 3,
+            "label": "Bull",
+            "count_train": 185,
+            "pct_train": 22.3,
+            "mean_ret_train_pct": 0.1128,
+            "std_ret_train_pct": 0.595,
+            "model_mean_scaled": 0.1243,
+            "A_ss": 0.776
+          },
+          {
+            "state": 4,
+            "label": "Bear",
+            "count_train": 70,
+            "pct_train": 8.4,
+            "mean_ret_train_pct": -0.9817,
+            "std_ret_train_pct": 1.0232,
+            "model_mean_scaled": -1.2476,
+            "A_ss": 0.367
+          }
+        ],
+        "pct_time_bull_train": 73.4,
+        "pct_time_bull_test": 69.8,
+        "count_bull_test": 37,
+        "total_test_bars": 53
+      }
+    },
+    {
+      "Fold": 12,
+      "Train Start": "2024-09-20",
+      "Train End": "2025-03-19",
+      "Test Start": "2025-03-19",
+      "Test End": "2025-04-02",
+      "_train_end_ts": "2025-03-19 00:00:00+00:00",
+      "_test_start_ts": "2025-03-19 01:00:00+00:00",
+      "Trades": 3,
+      "Total Return (%)": 4.47,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -1.38,
+      "Sharpe Ratio": 6.534,
+      "Total Fees ($)": 27.24,
+      "attribution": {
+        "bars_bull_regime": 130,
+        "bars_signal_ok_while_bull": 20,
+        "bars_eligible": 11,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 2,
+        "exits_end_of_data": 1,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 38.7,
+        "pct_time_signal_ok": 6.0,
+        "pct_time_eligible": 3.3
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 130,
+        "3_signal_ok": 20,
+        "4_eligible": 11,
+        "5_not_blocked": 11,
+        "6_entries_taken": 3
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0,
+          2,
+          4
+        ],
+        "bear_state": 3,
+        "bull_label_reason": "Bull states: state 0 (occ=22.0%  mean=+0.2781%  std=0.5369%  A_ss=0.651) | state 2 (occ=30.5%  mean=+0.2136%  std=0.2187%  A_ss=0.476) | state 4 (occ=18.3%  mean=+0.3235%  std=0.9220%  A_ss=0.773)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 181,
+            "pct_train": 22.0,
+            "mean_ret_train_pct": 0.2781,
+            "std_ret_train_pct": 0.5369,
+            "model_mean_scaled": 0.4046,
+            "A_ss": 0.651
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 165,
+            "pct_train": 20.1,
+            "mean_ret_train_pct": -0.3327,
+            "std_ret_train_pct": 0.2419,
+            "model_mean_scaled": -0.4224,
+            "A_ss": 0.3
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 250,
+            "pct_train": 30.5,
+            "mean_ret_train_pct": 0.2136,
+            "std_ret_train_pct": 0.2187,
+            "model_mean_scaled": 0.2877,
+            "A_ss": 0.476
+          },
+          {
+            "state": 3,
+            "label": "Bear",
+            "count_train": 75,
+            "pct_train": 9.1,
+            "mean_ret_train_pct": -1.1933,
+            "std_ret_train_pct": 0.7447,
+            "model_mean_scaled": -1.5051,
+            "A_ss": 0.37
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 150,
+            "pct_train": 18.3,
+            "mean_ret_train_pct": 0.3235,
+            "std_ret_train_pct": 0.922,
+            "model_mean_scaled": 0.4171,
+            "A_ss": 0.773
+          }
+        ],
+        "pct_time_bull_train": 70.8,
+        "pct_time_bull_test": 64.6,
+        "count_bull_test": 42,
+        "total_test_bars": 65
+      }
+    },
+    {
+      "Fold": 13,
+      "Train Start": "2024-10-04",
+      "Train End": "2025-04-02",
+      "Test Start": "2025-04-02",
+      "Test End": "2025-04-16",
+      "_train_end_ts": "2025-04-02 00:00:00+00:00",
+      "_test_start_ts": "2025-04-02 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 204,
+        "bars_signal_ok_while_bull": 4,
+        "bars_eligible": 4,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 4,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 60.7,
+        "pct_time_signal_ok": 1.2,
+        "pct_time_eligible": 1.2
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 204,
+        "3_signal_ok": 4,
+        "4_eligible": 4,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          1,
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 1 (occ=12.7%  mean=+0.4921%  std=0.9499%  A_ss=0.613) | state 4 (occ=19.0%  mean=+0.3407%  std=0.5899%  A_ss=0.668)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 79,
+            "pct_train": 9.6,
+            "mean_ret_train_pct": -1.2857,
+            "std_ret_train_pct": 0.6672,
+            "model_mean_scaled": -1.7495,
+            "A_ss": 0.22
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 104,
+            "pct_train": 12.7,
+            "mean_ret_train_pct": 0.4921,
+            "std_ret_train_pct": 0.9499,
+            "model_mean_scaled": 0.6441,
+            "A_ss": 0.613
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 238,
+            "pct_train": 29.0,
+            "mean_ret_train_pct": 0.0255,
+            "std_ret_train_pct": 0.3371,
+            "model_mean_scaled": 0.0158,
+            "A_ss": 0.824
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 243,
+            "pct_train": 29.6,
+            "mean_ret_train_pct": 0.017,
+            "std_ret_train_pct": 0.3025,
+            "model_mean_scaled": 0.0137,
+            "A_ss": 0.851
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 156,
+            "pct_train": 19.0,
+            "mean_ret_train_pct": 0.3407,
+            "std_ret_train_pct": 0.5899,
+            "model_mean_scaled": 0.4327,
+            "A_ss": 0.668
+          }
+        ],
+        "pct_time_bull_train": 31.7,
+        "pct_time_bull_test": 59.6,
+        "count_bull_test": 28,
+        "total_test_bars": 47
+      }
+    },
+    {
+      "Fold": 14,
+      "Train Start": "2024-10-18",
+      "Train End": "2025-04-16",
+      "Test Start": "2025-04-16",
+      "Test End": "2025-04-30",
+      "_train_end_ts": "2025-04-16 00:00:00+00:00",
+      "_test_start_ts": "2025-04-16 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 0,
+        "bars_signal_ok_while_bull": 0,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 0.0,
+        "pct_time_signal_ok": 0.0,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 0,
+        "3_signal_ok": 0,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0
+        ],
+        "bear_state": 4,
+        "bull_label_reason": "Bull states: state 0 (occ=18.0%  mean=+0.6003%  std=0.7672%  A_ss=0.602)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 144,
+            "pct_train": 18.0,
+            "mean_ret_train_pct": 0.6003,
+            "std_ret_train_pct": 0.7672,
+            "model_mean_scaled": 0.7655,
+            "A_ss": 0.602
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 167,
+            "pct_train": 20.8,
+            "mean_ret_train_pct": 0.0553,
+            "std_ret_train_pct": 0.73,
+            "model_mean_scaled": 0.0731,
+            "A_ss": 0.791
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 229,
+            "pct_train": 28.6,
+            "mean_ret_train_pct": 0.0786,
+            "std_ret_train_pct": 0.2649,
+            "model_mean_scaled": 0.0826,
+            "A_ss": 0.766
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 177,
+            "pct_train": 22.1,
+            "mean_ret_train_pct": -0.0197,
+            "std_ret_train_pct": 0.3865,
+            "model_mean_scaled": -0.046,
+            "A_ss": 0.843
+          },
+          {
+            "state": 4,
+            "label": "Bear",
+            "count_train": 85,
+            "pct_train": 10.6,
+            "mean_ret_train_pct": -1.1221,
+            "std_ret_train_pct": 0.7664,
+            "model_mean_scaled": -1.5084,
+            "A_ss": 0.34
+          }
+        ],
+        "pct_time_bull_train": 18.0,
+        "pct_time_bull_test": 0.0,
+        "count_bull_test": 0,
+        "total_test_bars": 19
+      }
+    },
+    {
+      "Fold": 15,
+      "Train Start": "2024-11-01",
+      "Train End": "2025-04-30",
+      "Test Start": "2025-04-30",
+      "Test End": "2025-05-14",
+      "_train_end_ts": "2025-04-30 00:00:00+00:00",
+      "_test_start_ts": "2025-04-30 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 0,
+        "bars_signal_ok_while_bull": 0,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 0.0,
+        "pct_time_signal_ok": 0.0,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 0,
+        "3_signal_ok": 0,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0,
+          1
+        ],
+        "bear_state": 2,
+        "bull_label_reason": "Bull states: state 0 (occ=13.1%  mean=+0.3631%  std=1.2029%  A_ss=0.688) | state 1 (occ=20.3%  mean=+0.4690%  std=0.5281%  A_ss=0.527)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 97,
+            "pct_train": 13.1,
+            "mean_ret_train_pct": 0.3631,
+            "std_ret_train_pct": 1.2029,
+            "model_mean_scaled": 0.4282,
+            "A_ss": 0.688
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 151,
+            "pct_train": 20.3,
+            "mean_ret_train_pct": 0.469,
+            "std_ret_train_pct": 0.5281,
+            "model_mean_scaled": 0.5904,
+            "A_ss": 0.527
+          },
+          {
+            "state": 2,
+            "label": "Bear",
+            "count_train": 88,
+            "pct_train": 11.8,
+            "mean_ret_train_pct": -1.0565,
+            "std_ret_train_pct": 0.6979,
+            "model_mean_scaled": -1.2811,
+            "A_ss": 0.295
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 143,
+            "pct_train": 19.2,
+            "mean_ret_train_pct": -0.0879,
+            "std_ret_train_pct": 0.4325,
+            "model_mean_scaled": -0.1296,
+            "A_ss": 0.735
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 264,
+            "pct_train": 35.5,
+            "mean_ret_train_pct": 0.0481,
+            "std_ret_train_pct": 0.2981,
+            "model_mean_scaled": 0.0435,
+            "A_ss": 0.806
+          }
+        ],
+        "pct_time_bull_train": 33.4,
+        "pct_time_bull_test": 0.0,
+        "count_bull_test": 0,
+        "total_test_bars": 26
+      }
+    },
+    {
+      "Fold": 16,
+      "Train Start": "2024-11-15",
+      "Train End": "2025-05-14",
+      "Test Start": "2025-05-14",
+      "Test End": "2025-05-28",
+      "_train_end_ts": "2025-05-14 00:00:00+00:00",
+      "_test_start_ts": "2025-05-14 01:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": 5.62,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -2.33,
+      "Sharpe Ratio": 6.416,
+      "Total Fees ($)": 8.8,
+      "attribution": {
+        "bars_bull_regime": 62,
+        "bars_signal_ok_while_bull": 2,
+        "bars_eligible": 1,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 1,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 18.5,
+        "pct_time_signal_ok": 0.6,
+        "pct_time_eligible": 0.3
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 62,
+        "3_signal_ok": 2,
+        "4_eligible": 1,
+        "5_not_blocked": 1,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2
+        ],
+        "bear_state": 1,
+        "bull_label_reason": "Bull states: state 2 (occ=21.3%  mean=+0.6419%  std=0.7592%  A_ss=0.543)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 127,
+            "pct_train": 18.9,
+            "mean_ret_train_pct": -0.0439,
+            "std_ret_train_pct": 0.5762,
+            "model_mean_scaled": -0.0471,
+            "A_ss": 0.648
+          },
+          {
+            "state": 1,
+            "label": "Bear",
+            "count_train": 87,
+            "pct_train": 12.9,
+            "mean_ret_train_pct": -1.0888,
+            "std_ret_train_pct": 0.7813,
+            "model_mean_scaled": -1.4404,
+            "A_ss": 0.328
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 143,
+            "pct_train": 21.3,
+            "mean_ret_train_pct": 0.6419,
+            "std_ret_train_pct": 0.7592,
+            "model_mean_scaled": 0.8357,
+            "A_ss": 0.543
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 123,
+            "pct_train": 18.3,
+            "mean_ret_train_pct": -0.0187,
+            "std_ret_train_pct": 0.4057,
+            "model_mean_scaled": -0.0348,
+            "A_ss": 0.796
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 192,
+            "pct_train": 28.6,
+            "mean_ret_train_pct": 0.07,
+            "std_ret_train_pct": 0.24,
+            "model_mean_scaled": 0.086,
+            "A_ss": 0.774
+          }
+        ],
+        "pct_time_bull_train": 21.3,
+        "pct_time_bull_test": 12.5,
+        "count_bull_test": 3,
+        "total_test_bars": 24
+      }
+    },
+    {
+      "Fold": 17,
+      "Train Start": "2024-11-29",
+      "Train End": "2025-05-28",
+      "Test Start": "2025-05-28",
+      "Test End": "2025-06-11",
+      "_train_end_ts": "2025-05-28 00:00:00+00:00",
+      "_test_start_ts": "2025-05-28 01:00:00+00:00",
+      "Trades": 2,
+      "Total Return (%)": 1.34,
+      "Win Rate (%)": 50.0,
+      "Max Drawdown (%)": -3.09,
+      "Sharpe Ratio": 3.078,
+      "Total Fees ($)": 16.97,
+      "attribution": {
+        "bars_bull_regime": 151,
+        "bars_signal_ok_while_bull": 5,
+        "bars_eligible": 4,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 1,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 1,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 44.9,
+        "pct_time_signal_ok": 1.5,
+        "pct_time_eligible": 1.2
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 151,
+        "3_signal_ok": 5,
+        "4_eligible": 4,
+        "5_not_blocked": 4,
+        "6_entries_taken": 2
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          1,
+          2,
+          4
+        ],
+        "bear_state": 3,
+        "bull_label_reason": "Bull states: state 1 (occ=34.2%  mean=+0.2098%  std=0.2207%  A_ss=0.488) | state 2 (occ=11.9%  mean=+0.4540%  std=1.0502%  A_ss=0.611) | state 4 (occ=23.0%  mean=+0.3283%  std=0.5630%  A_ss=0.673)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Neutral",
+            "count_train": 143,
+            "pct_train": 22.0,
+            "mean_ret_train_pct": -0.3644,
+            "std_ret_train_pct": 0.254,
+            "model_mean_scaled": -0.4202,
+            "A_ss": 0.333
+          },
+          {
+            "state": 1,
+            "label": "Bull",
+            "count_train": 222,
+            "pct_train": 34.2,
+            "mean_ret_train_pct": 0.2098,
+            "std_ret_train_pct": 0.2207,
+            "model_mean_scaled": 0.2942,
+            "A_ss": 0.488
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 77,
+            "pct_train": 11.9,
+            "mean_ret_train_pct": 0.454,
+            "std_ret_train_pct": 1.0502,
+            "model_mean_scaled": 0.5703,
+            "A_ss": 0.611
+          },
+          {
+            "state": 3,
+            "label": "Bear",
+            "count_train": 58,
+            "pct_train": 8.9,
+            "mean_ret_train_pct": -1.3986,
+            "std_ret_train_pct": 0.7135,
+            "model_mean_scaled": -1.786,
+            "A_ss": 0.257
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 149,
+            "pct_train": 23.0,
+            "mean_ret_train_pct": 0.3283,
+            "std_ret_train_pct": 0.563,
+            "model_mean_scaled": 0.4408,
+            "A_ss": 0.673
+          }
+        ],
+        "pct_time_bull_train": 69.0,
+        "pct_time_bull_test": 75.0,
+        "count_bull_test": 9,
+        "total_test_bars": 12
+      }
+    },
+    {
+      "Fold": 18,
+      "Train Start": "2024-12-13",
+      "Train End": "2025-06-11",
+      "Test Start": "2025-06-11",
+      "Test End": "2025-06-25",
+      "_train_end_ts": "2025-06-11 00:00:00+00:00",
+      "_test_start_ts": "2025-06-11 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 105,
+        "bars_signal_ok_while_bull": 2,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 31.2,
+        "pct_time_signal_ok": 0.6,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 105,
+        "3_signal_ok": 2,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0,
+          2,
+          4
+        ],
+        "bear_state": 3,
+        "bull_label_reason": "Bull states: state 0 (occ=10.8%  mean=+0.1262%  std=0.5707%  A_ss=0.694) | state 2 (occ=32.4%  mean=+0.2214%  std=0.2541%  A_ss=0.550) | state 4 (occ=22.3%  mean=+0.5148%  std=0.7536%  A_ss=0.585)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 63,
+            "pct_train": 10.8,
+            "mean_ret_train_pct": 0.1262,
+            "std_ret_train_pct": 0.5707,
+            "model_mean_scaled": 0.1706,
+            "A_ss": 0.694
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 133,
+            "pct_train": 22.8,
+            "mean_ret_train_pct": -0.2899,
+            "std_ret_train_pct": 0.2907,
+            "model_mean_scaled": -0.3559,
+            "A_ss": 0.446
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 189,
+            "pct_train": 32.4,
+            "mean_ret_train_pct": 0.2214,
+            "std_ret_train_pct": 0.2541,
+            "model_mean_scaled": 0.317,
+            "A_ss": 0.55
+          },
+          {
+            "state": 3,
+            "label": "Bear",
+            "count_train": 68,
+            "pct_train": 11.7,
+            "mean_ret_train_pct": -1.1757,
+            "std_ret_train_pct": 0.7809,
+            "model_mean_scaled": -1.5937,
+            "A_ss": 0.314
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 130,
+            "pct_train": 22.3,
+            "mean_ret_train_pct": 0.5148,
+            "std_ret_train_pct": 0.7536,
+            "model_mean_scaled": 0.6955,
+            "A_ss": 0.585
+          }
+        ],
+        "pct_time_bull_train": 65.5,
+        "pct_time_bull_test": 66.7,
+        "count_bull_test": 12,
+        "total_test_bars": 18
+      }
+    },
+    {
+      "Fold": 19,
+      "Train Start": "2024-12-27",
+      "Train End": "2025-06-25",
+      "Test Start": "2025-06-25",
+      "Test End": "2025-07-09",
+      "_train_end_ts": "2025-06-25 00:00:00+00:00",
+      "_test_start_ts": "2025-06-25 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 0,
+        "bars_signal_ok_while_bull": 0,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 0.0,
+        "pct_time_signal_ok": 0.0,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 0,
+        "3_signal_ok": 0,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0
+        ],
+        "bear_state": 1,
+        "bull_label_reason": "Bull states: state 0 (occ=16.1%  mean=+0.5953%  std=0.5386%  A_ss=0.487)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 88,
+            "pct_train": 16.1,
+            "mean_ret_train_pct": 0.5953,
+            "std_ret_train_pct": 0.5386,
+            "model_mean_scaled": 0.7497,
+            "A_ss": 0.487
+          },
+          {
+            "state": 1,
+            "label": "Bear",
+            "count_train": 68,
+            "pct_train": 12.5,
+            "mean_ret_train_pct": -0.9841,
+            "std_ret_train_pct": 0.7396,
+            "model_mean_scaled": -1.301,
+            "A_ss": 0.206
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 170,
+            "pct_train": 31.1,
+            "mean_ret_train_pct": 0.0473,
+            "std_ret_train_pct": 0.2448,
+            "model_mean_scaled": 0.0527,
+            "A_ss": 0.807
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 124,
+            "pct_train": 22.7,
+            "mean_ret_train_pct": 0.0435,
+            "std_ret_train_pct": 0.3358,
+            "model_mean_scaled": 0.0375,
+            "A_ss": 0.765
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 96,
+            "pct_train": 17.6,
+            "mean_ret_train_pct": 0.0956,
+            "std_ret_train_pct": 0.989,
+            "model_mean_scaled": 0.1181,
+            "A_ss": 0.793
+          }
+        ],
+        "pct_time_bull_train": 16.1,
+        "pct_time_bull_test": 0.0,
+        "count_bull_test": 0,
+        "total_test_bars": 16
+      }
+    },
+    {
+      "Fold": 20,
+      "Train Start": "2025-01-10",
+      "Train End": "2025-07-09",
+      "Test Start": "2025-07-09",
+      "Test End": "2025-07-23",
+      "_train_end_ts": "2025-07-09 00:00:00+00:00",
+      "_test_start_ts": "2025-07-09 01:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": 2.71,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -0.85,
+      "Sharpe Ratio": 8.322,
+      "Total Fees ($)": 6.55,
+      "attribution": {
+        "bars_bull_regime": 108,
+        "bars_signal_ok_while_bull": 14,
+        "bars_eligible": 9,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 32.1,
+        "pct_time_signal_ok": 4.2,
+        "pct_time_eligible": 2.7
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 108,
+        "3_signal_ok": 14,
+        "4_eligible": 9,
+        "5_not_blocked": 9,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2,
+          3,
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 2 (occ=34.7%  mean=+0.2291%  std=0.2416%  A_ss=0.536) | state 3 (occ=21.1%  mean=+0.5077%  std=0.8007%  A_ss=0.616) | state 4 (occ=12.6%  mean=+0.1145%  std=0.5362%  A_ss=0.739)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 46,
+            "pct_train": 9.7,
+            "mean_ret_train_pct": -1.3231,
+            "std_ret_train_pct": 0.7585,
+            "model_mean_scaled": -1.7942,
+            "A_ss": 0.256
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 104,
+            "pct_train": 21.9,
+            "mean_ret_train_pct": -0.312,
+            "std_ret_train_pct": 0.267,
+            "model_mean_scaled": -0.3926,
+            "A_ss": 0.42
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 165,
+            "pct_train": 34.7,
+            "mean_ret_train_pct": 0.2291,
+            "std_ret_train_pct": 0.2416,
+            "model_mean_scaled": 0.3192,
+            "A_ss": 0.536
+          },
+          {
+            "state": 3,
+            "label": "Bull",
+            "count_train": 100,
+            "pct_train": 21.1,
+            "mean_ret_train_pct": 0.5077,
+            "std_ret_train_pct": 0.8007,
+            "model_mean_scaled": 0.6792,
+            "A_ss": 0.616
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 60,
+            "pct_train": 12.6,
+            "mean_ret_train_pct": 0.1145,
+            "std_ret_train_pct": 0.5362,
+            "model_mean_scaled": 0.1486,
+            "A_ss": 0.739
+          }
+        ],
+        "pct_time_bull_train": 68.4,
+        "pct_time_bull_test": 68.8,
+        "count_bull_test": 22,
+        "total_test_bars": 32
+      }
+    },
+    {
+      "Fold": 21,
+      "Train Start": "2025-01-24",
+      "Train End": "2025-07-23",
+      "Test Start": "2025-07-23",
+      "Test End": "2025-08-06",
+      "_train_end_ts": "2025-07-23 00:00:00+00:00",
+      "_test_start_ts": "2025-07-23 01:00:00+00:00",
+      "Trades": 0,
+      "Total Return (%)": 0.0,
+      "Win Rate (%)": 0,
+      "Max Drawdown (%)": 0.0,
+      "Sharpe Ratio": 0.0,
+      "Total Fees ($)": 0.0,
+      "attribution": {
+        "bars_bull_regime": 0,
+        "bars_signal_ok_while_bull": 0,
+        "bars_eligible": 0,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 0.0,
+        "pct_time_signal_ok": 0.0,
+        "pct_time_eligible": 0.0
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 0,
+        "3_signal_ok": 0,
+        "4_eligible": 0,
+        "5_not_blocked": 0,
+        "6_entries_taken": 0
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 2 (occ=18.9%  mean=+0.4259%  std=0.6764%  A_ss=0.664)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 40,
+            "pct_train": 8.9,
+            "mean_ret_train_pct": -1.3216,
+            "std_ret_train_pct": 0.7948,
+            "model_mean_scaled": -1.9491,
+            "A_ss": 0.228
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 120,
+            "pct_train": 26.7,
+            "mean_ret_train_pct": 0.04,
+            "std_ret_train_pct": 0.5481,
+            "model_mean_scaled": 0.0776,
+            "A_ss": 0.761
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 85,
+            "pct_train": 18.9,
+            "mean_ret_train_pct": 0.4259,
+            "std_ret_train_pct": 0.6764,
+            "model_mean_scaled": 0.6227,
+            "A_ss": 0.664
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 60,
+            "pct_train": 13.4,
+            "mean_ret_train_pct": 0.0204,
+            "std_ret_train_pct": 0.38,
+            "model_mean_scaled": 0.0511,
+            "A_ss": 0.78
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 144,
+            "pct_train": 32.1,
+            "mean_ret_train_pct": 0.0487,
+            "std_ret_train_pct": 0.2284,
+            "model_mean_scaled": 0.075,
+            "A_ss": 0.787
+          }
+        ],
+        "pct_time_bull_train": 18.9,
+        "pct_time_bull_test": 0.0,
+        "count_bull_test": 0,
+        "total_test_bars": 19
+      }
+    },
+    {
+      "Fold": 22,
+      "Train Start": "2025-02-07",
+      "Train End": "2025-08-06",
+      "Test Start": "2025-08-06",
+      "Test End": "2025-08-20",
+      "_train_end_ts": "2025-08-06 00:00:00+00:00",
+      "_test_start_ts": "2025-08-06 01:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": 3.76,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -3.13,
+      "Sharpe Ratio": 5.543,
+      "Total Fees ($)": 10.0,
+      "attribution": {
+        "bars_bull_regime": 120,
+        "bars_signal_ok_while_bull": 3,
+        "bars_eligible": 1,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 35.7,
+        "pct_time_signal_ok": 0.9,
+        "pct_time_eligible": 0.3
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 120,
+        "3_signal_ok": 3,
+        "4_eligible": 1,
+        "5_not_blocked": 1,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2,
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 2 (occ=11.9%  mean=+0.2435%  std=0.9564%  A_ss=0.618) | state 4 (occ=38.5%  mean=+0.1872%  std=0.2274%  A_ss=0.557)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 78,
+            "pct_train": 18.9,
+            "mean_ret_train_pct": -0.4114,
+            "std_ret_train_pct": 0.2906,
+            "model_mean_scaled": -0.5594,
+            "A_ss": 0.344
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 71,
+            "pct_train": 17.2,
+            "mean_ret_train_pct": 0.0997,
+            "std_ret_train_pct": 0.4887,
+            "model_mean_scaled": 0.1756,
+            "A_ss": 0.856
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 49,
+            "pct_train": 11.9,
+            "mean_ret_train_pct": 0.2435,
+            "std_ret_train_pct": 0.9564,
+            "model_mean_scaled": 0.3611,
+            "A_ss": 0.618
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 56,
+            "pct_train": 13.6,
+            "mean_ret_train_pct": -0.3514,
+            "std_ret_train_pct": 1.0231,
+            "model_mean_scaled": -0.5337,
+            "A_ss": 0.889
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 159,
+            "pct_train": 38.5,
+            "mean_ret_train_pct": 0.1872,
+            "std_ret_train_pct": 0.2274,
+            "model_mean_scaled": 0.321,
+            "A_ss": 0.557
+          }
+        ],
+        "pct_time_bull_train": 50.4,
+        "pct_time_bull_test": 75.0,
+        "count_bull_test": 9,
+        "total_test_bars": 12
+      }
+    },
+    {
+      "Fold": 23,
+      "Train Start": "2025-02-21",
+      "Train End": "2025-08-20",
+      "Test Start": "2025-08-20",
+      "Test End": "2025-09-03",
+      "_train_end_ts": "2025-08-20 00:00:00+00:00",
+      "_test_start_ts": "2025-08-20 01:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": -2.16,
+      "Win Rate (%)": 0.0,
+      "Max Drawdown (%)": -2.31,
+      "Sharpe Ratio": -9.037,
+      "Total Fees ($)": 5.76,
+      "attribution": {
+        "bars_bull_regime": 54,
+        "bars_signal_ok_while_bull": 3,
+        "bars_eligible": 1,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 1,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 16.1,
+        "pct_time_signal_ok": 0.9,
+        "pct_time_eligible": 0.3
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 54,
+        "3_signal_ok": 3,
+        "4_eligible": 1,
+        "5_not_blocked": 1,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0,
+          3
+        ],
+        "bear_state": 1,
+        "bull_label_reason": "Bull states: state 0 (occ=9.2%  mean=+0.6711%  std=0.6327%  A_ss=0.508) | state 3 (occ=20.1%  mean=+0.1343%  std=0.4875%  A_ss=0.814)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 36,
+            "pct_train": 9.2,
+            "mean_ret_train_pct": 0.6711,
+            "std_ret_train_pct": 0.6327,
+            "model_mean_scaled": 0.9664,
+            "A_ss": 0.508
+          },
+          {
+            "state": 1,
+            "label": "Bear",
+            "count_train": 51,
+            "pct_train": 13.0,
+            "mean_ret_train_pct": -0.6661,
+            "std_ret_train_pct": 1.0219,
+            "model_mean_scaled": -1.0263,
+            "A_ss": 0.463
+          },
+          {
+            "state": 2,
+            "label": "Neutral",
+            "count_train": 133,
+            "pct_train": 33.8,
+            "mean_ret_train_pct": -0.0602,
+            "std_ret_train_pct": 0.2953,
+            "model_mean_scaled": -0.0614,
+            "A_ss": 0.823
+          },
+          {
+            "state": 3,
+            "label": "Bull",
+            "count_train": 79,
+            "pct_train": 20.1,
+            "mean_ret_train_pct": 0.1343,
+            "std_ret_train_pct": 0.4875,
+            "model_mean_scaled": 0.2066,
+            "A_ss": 0.814
+          },
+          {
+            "state": 4,
+            "label": "Neutral",
+            "count_train": 94,
+            "pct_train": 23.9,
+            "mean_ret_train_pct": 0.0297,
+            "std_ret_train_pct": 0.5,
+            "model_mean_scaled": 0.0736,
+            "A_ss": 0.824
+          }
+        ],
+        "pct_time_bull_train": 29.3,
+        "pct_time_bull_test": 17.6,
+        "count_bull_test": 3,
+        "total_test_bars": 17
+      }
+    },
+    {
+      "Fold": 24,
+      "Train Start": "2025-03-07",
+      "Train End": "2025-09-03",
+      "Test Start": "2025-09-03",
+      "Test End": "2025-09-17",
+      "_train_end_ts": "2025-09-03 00:00:00+00:00",
+      "_test_start_ts": "2025-09-03 01:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": 3.05,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -1.84,
+      "Sharpe Ratio": 5.592,
+      "Total Fees ($)": 9.99,
+      "attribution": {
+        "bars_bull_regime": 138,
+        "bars_signal_ok_while_bull": 6,
+        "bars_eligible": 3,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 1,
+        "exits_end_of_data": 0,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 41.1,
+        "pct_time_signal_ok": 1.8,
+        "pct_time_eligible": 0.9
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 138,
+        "3_signal_ok": 6,
+        "4_eligible": 3,
+        "5_not_blocked": 3,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          2,
+          4
+        ],
+        "bear_state": 0,
+        "bull_label_reason": "Bull states: state 2 (occ=44.9%  mean=+0.2703%  std=0.2642%  A_ss=0.494) | state 4 (occ=8.1%  mean=+0.7756%  std=0.6546%  A_ss=0.482)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bear",
+            "count_train": 20,
+            "pct_train": 5.6,
+            "mean_ret_train_pct": -1.2694,
+            "std_ret_train_pct": 0.5644,
+            "model_mean_scaled": -2.0266,
+            "A_ss": 0.188
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 113,
+            "pct_train": 31.7,
+            "mean_ret_train_pct": -0.3278,
+            "std_ret_train_pct": 0.2507,
+            "model_mean_scaled": -0.5013,
+            "A_ss": 0.336
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 160,
+            "pct_train": 44.9,
+            "mean_ret_train_pct": 0.2703,
+            "std_ret_train_pct": 0.2642,
+            "model_mean_scaled": 0.4443,
+            "A_ss": 0.494
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 34,
+            "pct_train": 9.6,
+            "mean_ret_train_pct": -0.0675,
+            "std_ret_train_pct": 0.7411,
+            "model_mean_scaled": -0.1156,
+            "A_ss": 0.911
+          },
+          {
+            "state": 4,
+            "label": "Bull",
+            "count_train": 29,
+            "pct_train": 8.1,
+            "mean_ret_train_pct": 0.7756,
+            "std_ret_train_pct": 0.6546,
+            "model_mean_scaled": 1.1365,
+            "A_ss": 0.482
+          }
+        ],
+        "pct_time_bull_train": 53.1,
+        "pct_time_bull_test": 66.7,
+        "count_bull_test": 10,
+        "total_test_bars": 15
+      }
+    },
+    {
+      "Fold": 25,
+      "Train Start": "2025-03-21",
+      "Train End": "2025-09-17",
+      "Test Start": "2025-09-17",
+      "Test End": "2025-10-01",
+      "_train_end_ts": "2025-09-17 00:00:00+00:00",
+      "_test_start_ts": "2025-09-17 01:00:00+00:00",
+      "Trades": 1,
+      "Total Return (%)": 1.42,
+      "Win Rate (%)": 100.0,
+      "Max Drawdown (%)": -0.78,
+      "Sharpe Ratio": 6.204,
+      "Total Fees ($)": 4.88,
+      "attribution": {
+        "bars_bull_regime": 134,
+        "bars_signal_ok_while_bull": 7,
+        "bars_eligible": 5,
+        "entries_blocked_cooldown": 0,
+        "entries_blocked_gate": 0,
+        "entries_blocked_external": 0,
+        "exits_stop_loss": 0,
+        "exits_trailing_stop": 0,
+        "exits_take_profit": 0,
+        "exits_regime_flip": 0,
+        "exits_end_of_data": 1,
+        "exits_force_flat": 0,
+        "exits_kill_switch": 0,
+        "pct_time_bull": 39.9,
+        "pct_time_signal_ok": 2.1,
+        "pct_time_eligible": 1.5
+      },
+      "waterfall": {
+        "1_total_bars": 336,
+        "2_bull_regime": 134,
+        "3_signal_ok": 7,
+        "4_eligible": 5,
+        "5_not_blocked": 5,
+        "6_entries_taken": 1
+      },
+      "execution_rule_version": "v1_next_open",
+      "config_hash": "0110e56f",
+      "regime_qa": {
+        "bull_states": [
+          0,
+          2
+        ],
+        "bear_state": 4,
+        "bull_label_reason": "Bull states: state 0 (occ=25.4%  mean=+0.4461%  std=0.3704%  A_ss=0.400) | state 2 (occ=25.1%  mean=+0.1915%  std=0.1662%  A_ss=0.421)",
+        "state_diagnostics": [
+          {
+            "state": 0,
+            "label": "Bull",
+            "count_train": 79,
+            "pct_train": 25.4,
+            "mean_ret_train_pct": 0.4461,
+            "std_ret_train_pct": 0.3704,
+            "model_mean_scaled": 0.7516,
+            "A_ss": 0.4
+          },
+          {
+            "state": 1,
+            "label": "Neutral",
+            "count_train": 78,
+            "pct_train": 25.1,
+            "mean_ret_train_pct": -0.1853,
+            "std_ret_train_pct": 0.1733,
+            "model_mean_scaled": -0.359,
+            "A_ss": 0.231
+          },
+          {
+            "state": 2,
+            "label": "Bull",
+            "count_train": 78,
+            "pct_train": 25.1,
+            "mean_ret_train_pct": 0.1915,
+            "std_ret_train_pct": 0.1662,
+            "model_mean_scaled": 0.3127,
+            "A_ss": 0.421
+          },
+          {
+            "state": 3,
+            "label": "Neutral",
+            "count_train": 24,
+            "pct_train": 7.7,
+            "mean_ret_train_pct": 0.061,
+            "std_ret_train_pct": 1.1266,
+            "model_mean_scaled": 0.0738,
+            "A_ss": 0.958
+          },
+          {
+            "state": 4,
+            "label": "Bear",
+            "count_train": 52,
+            "pct_train": 16.7,
+            "mean_ret_train_pct": -0.6052,
+            "std_ret_train_pct": 0.355,
+            "model_mean_scaled": -1.0926,
+            "A_ss": 0.227
+          }
+        ],
+        "pct_time_bull_train": 50.5,
+        "pct_time_bull_test": 67.7,
+        "count_bull_test": 21,
+        "total_test_bars": 31
+      }
+    }
+  ],
+  "lockbox_metrics": {
+    "Total Return (%)": -4.72,
+    "Buy & Hold Return (%)": -47.05,
+    "Alpha (%)": 42.33,
+    "Win Rate (%)": 33.33,
+    "Max Drawdown (%)": -9.11,
+    "Sharpe Ratio": -1.047,
+    "Sortino Ratio": -0.374,
+    "CVaR 95% (ann %)": -25.304,
+    "Max Consec Losses": 3,
+    "Max Consec Wins": 2,
+    "Worst Decile Trade (%)": -2.82,
+    "Large Loss Trades": 0,
+    "Time-to-Recovery (h)": null,
+    "Total Trades": 15,
+    "Stop Loss Exits": 3,
+    "Take Profit Exits": 0,
+    "Regime Flip Exits": 12,
+    "Min Regime Bars": 3,
+    "Final Equity ($)": 9528.16,
+    "Starting Capital ($)": 10000.0,
+    "Total Fees ($)": 91.54,
+    "Exit Mode": "Fixed %",
+    "Stop Loss (%)": -2.5,
+    "Take Profit (%)": 6.0,
+    "Fee (bps/side)": 5,
+    "Slippage (bps/side)": 3,
+    "attribution": {
+      "bars_bull_regime": 1617,
+      "bars_signal_ok_while_bull": 101,
+      "bars_eligible": 36,
+      "entries_blocked_cooldown": 8,
+      "entries_blocked_gate": 1,
+      "entries_blocked_external": 0,
+      "exits_stop_loss": 3,
+      "exits_trailing_stop": 0,
+      "exits_take_profit": 0,
+      "exits_regime_flip": 12,
+      "exits_end_of_data": 0,
+      "exits_force_flat": 0,
+      "exits_kill_switch": 0,
+      "pct_time_bull": 50.3,
+      "pct_time_signal_ok": 3.1,
+      "pct_time_eligible": 1.1
+    },
+    "waterfall": {
+      "1_total_bars": 3214,
+      "2_bull_regime": 1617,
+      "3_signal_ok": 101,
+      "4_eligible": 36,
+      "5_not_blocked": 35,
+      "6_entries_taken": 15
+    },
+    "execution_rule_version": "v1_next_open",
+    "config_hash": "0110e56f",
+    "exits_stop_loss": 3,
+    "exits_trailing_stop": 0,
+    "exits_take_profit": 0,
+    "exits_regime_flip": 12,
+    "exits_force_flat": 0,
+    "exits_kill_switch": 0,
+    "entries_blocked_gate": 1,
+    "entries_blocked_external": 0,
+    "Period Start": "2025-10-06",
+    "Period End": "2026-02-18"
+  }
+}

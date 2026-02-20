@@ -8,11 +8,11 @@ A professional algorithmic trading research dashboard that uses a **Hidden Marko
 
 ## Overview
 
-The system classifies every hourly candle into one of three regimes — **Bull**, **Bear**, or **Neutral** — by fitting a 7-state Gaussian HMM to three market features. A long position is only taken when:
+The system classifies every hourly candle into one of three regimes — **Bull**, **Bear**, or **Neutral** — by fitting a 5-state Gaussian HMM to four market features. A long position is only taken when:
 
 1. The HMM regime has been **Bull for at least N consecutive bars** (configurable)
 2. **All 4 bucket minimums** of the technical confirmation gate are met
-3. The 48-hour cooldown after the last exit has elapsed
+3. The 12-hour cooldown after the last exit has elapsed
 4. No active **Phase 3 risk gates** (kill switch, stress filter, external data gates)
 
 Exits are triggered by the first of: Force-Flat (stress spike) → Kill Switch → Stop Loss → Take Profit → Regime Flip.
@@ -85,8 +85,8 @@ HMM-Trading-System/
 
 ### `hmm_engine.py`
 
-- Fits a **`hmmlearn.GaussianHMM`** with **4 hidden states** (K=4) using 200 EM iterations
-- Three training features:
+- Fits a **`hmmlearn.GaussianHMM`** with **5 hidden states** (K=5) using 200 EM iterations
+- Four training features:
   1. **Log Return** — `log(Close_t / Close_{t-1})`
   2. **Range Ratio** — `(High − Low) / Close` (intrabar volatility proxy)
   3. **Volume Volatility** — 5-bar rolling std of `log(Volume)`
@@ -105,8 +105,8 @@ HMM-Trading-System/
 - Viterbi decoding assigns a hard regime label per bar; forward-backward gives `p_bull`
 - `get_state_stats()` returns per-state: Label, Count, Occ (%), Mean Return (%), Std Return (%), **A_ss** (self-transition probability)
 
-**Why K=4 and persistent-regime labelling?**
-With K=7 and `argmax(mean_return)`, the Bull state routinely captured a single extreme-return spike cluster occupying 1–5% of train bars — and was invisible in 14-day OOS test windows (0% Bull on 16/25 folds). With K=4 and the occupancy filter, Bull represents **12–89%** of train bars and is consistently present in test windows (median ~60%), enabling the system to actually trade out-of-sample.
+**Why persistent-regime labelling?**
+The Bull label is assigned to a **set of persistent positive-mean states** (subject to occupancy and return thresholds), rather than a single `argmax(mean_return)` state. This avoids brittle "spike state" Bull labelling and improves out-of-sample tradability.
 
 ---
 
@@ -117,27 +117,29 @@ All thresholds and periods are controlled by a **single `CONFIG` dict**. Key Pha
 ```python
 CONFIG: dict = {
     # Periods
-    "rsi_period": 14, "momentum_period": 10, "volume_sma_period": 20,
+    "rsi_period": 14, "momentum_period": 5, "volume_sma_period": 10,
     "volatility_period": 24, "adx_period": 14, "atr_period": 14,
-    "ema_fast": 50, "ema_slow": 200,
+    "ema_fast": 20, "ema_slow": 50,
     "macd_fast": 12, "macd_slow": 26, "macd_signal": 9,
+    "roc_period": 8, "p_bull_slope_period": 3,
     # Thresholds
     "rsi_max": 90, "momentum_min_pct": 1.0,
-    "volatility_max_pct": 80.0,   # Phase 2 fix: was 6.0 (too tight for BTC)
+    "volatility_max_pct": 80.0,
     "adx_min": 25, "p_bull_min": 0.55,
     # Bucket voting
-    "trend_min": 2, "strength_min": 1,
-    "participation_min": 1, "risk_min": 2,
+    "trend_min": 2, "strength_min": 0,
+    "participation_min": 0, "risk_min": 2,
     # Phase 2: per-signal enable/disable toggles
-    "sig_rsi_on": True, "sig_momentum_on": True, "sig_volume_on": True,
-    "sig_volatility_on": True, "sig_adx_on": True,
+    "sig_rsi_on": True, "sig_momentum_on": True, "sig_volume_on": False,
+    "sig_volatility_on": True, "sig_adx_on": False,
     "sig_ema_fast_on": True, "sig_ema_slow_on": True,
     "sig_macd_on": True, "sig_confidence_on": True,
+    "sig_roc_on": True, "sig_pbull_slope_on": True,
     # Phase 3: risk gate parameters
-    "stress_range_threshold": 0.03, "stress_cooldown_hours": 12,
-    "stress_force_flat": False, "market_quality_filter": False,
-    "kill_switch_enabled": False, "kill_switch_dd_pct": 10.0,
-    "kill_switch_cooldown_h": 48,
+    "stress_range_threshold": 0.04, "stress_cooldown_hours": 24,
+    "stress_force_flat": True, "market_quality_filter": True,
+    "kill_switch_enabled": True, "kill_switch_dd_pct": 9.0,
+    "kill_switch_cooldown_h": 24,
     "vol_targeting_enabled": False, "vol_target_pct": 30.0,
     "vol_target_min_mult": 0.25, "vol_target_max_mult": 1.0,
 }
@@ -147,9 +149,9 @@ CONFIG: dict = {
 
 | Bucket | Signals | Default Min | Phase 2 |
 |--------|---------|-------------|---------|
-| **Trend** | EMA Fast, EMA Slow, MACD | ≥ 2 | Per-signal toggles; max recalculated dynamically |
-| **Strength** | ADX | ≥ 1 | Toggle; auto-passes if 0 active signals |
-| **Participation** | Volume > SMA | ≥ 1 | Toggle; auto-passes if 0 active signals |
+| **Trend** | EMA Fast, EMA Slow, MACD, ROC, p_bull Slope | ≥ 2 | Per-signal toggles; max recalculated dynamically |
+| **Strength** | ADX | ≥ 0 (disabled by default) | Toggle; auto-passes if 0 active signals |
+| **Participation** | Volume > SMA | ≥ 0 (disabled by default) | Toggle; auto-passes if 0 active signals |
 | **Risk/Cond.** | RSI, Volatility, Momentum, HMM Confidence | ≥ 2 | Per-signal toggles; dynamic max |
 
 Phase 2 also adds:
@@ -182,9 +184,9 @@ Signal fires at bar `i` (based on `Close[i]`); fill executes at bar `i+1`'s `Ope
 
 **Entry Rules (all must hold):**
 1. HMM regime == Bull
-2. Bull streak ≥ `min_regime_bars` consecutive bars (default 3)
+2. Bull streak ≥ `min_regime_bars` consecutive bars (default 2)
 3. All 4 bucket minimums met (`signal_ok == True`)
-4. Not in 48-hour post-exit cooldown
+4. Not in 12-hour post-exit cooldown
 5. Not in post-stress cooldown (`stress_cooldown_hours` after a spike bar)
 6. Market quality filter: not a stress spike bar (if `use_market_quality_filter`)
 7. Kill switch not active (if `kill_switch_enabled`)
@@ -314,9 +316,9 @@ python -m external_data.update --symbol BTCUSDT --overheat_z 2.0 --liquidity_min
 1. **Asset Selection** — dropdown of supported assets
 2. **Voting Gate** — per-bucket minimum sliders + per-signal enable/disable checkboxes
 3. **HMM Confidence** — `p_bull` threshold slider
-4. **Risk Management** — Stop Loss %, Take Profit %, Min Regime Bars
+4. **Risk Management** — Stop Loss %, Take Profit %, Min Regime Bars, Regime Flip Grace, p_bull sizing
 5. **Execution Costs** — Fee bps/side, Slippage bps/side
-6. **Stop Mode** — Fixed % or ATR-Scaled (with ATR multiples)
+6. **Stop Mode** — Fixed % or ATR-Scaled, plus Trailing Stop controls
 7. **Entry Thresholds** — RSI max, Momentum min, Volatility max, ADX min
 8. **Indicator Periods** — all lookback windows
 9. **MACD Settings** — Fast / Slow / Signal periods
@@ -324,6 +326,15 @@ python -m external_data.update --symbol BTCUSDT --overheat_z 2.0 --liquidity_min
     - Kill Switch (enable, DD threshold %, cooldown hours)
     - Market Quality / Stress Filter (enable filter, enable force-flat, range threshold, cooldown hours)
     - Vol Targeting (enable, target vol %, min/max multiplier)
+
+**Current default assumptions (as coded):**
+- Voting Gate: Trend min = 2; Risk/Cond min = 2; Strength/Participation disabled by default
+- HMM Confidence: `p_bull_min = 0.55`
+- Risk Management: Stop Loss = 2.5%, Take Profit = 4.0%, Min Bull Regime Bars = 2, Regime-Flip Grace = 2, Scale by `p_bull` = enabled
+- Execution Costs: Fee = 5 bps/side, Slippage = 3 bps/side
+- Stop Mode: ATR-Scaled Stops = disabled; Trailing Stop = enabled; Trailing ATR Mult = 2.5; Activation = 1.5%; Fallback Trail = 2.0%
+- Risk Gates: Kill Switch enabled (DD 9%, cooldown 24h); Market Quality filter enabled; Force-Flat on stress enabled; stress threshold = 0.04; post-stress cooldown = 24h
+- Vol Targeting: disabled
 
 **Main Dashboard panels:**
 
