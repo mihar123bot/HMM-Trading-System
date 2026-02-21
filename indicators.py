@@ -88,7 +88,7 @@ CONFIG: dict = {
     "stress_range_threshold": 0.04,   # (H-L)/C > 4% → stress spike
     "stress_cooldown_hours":  24,     # hours to block entries after a stress spike
     "stress_force_flat":      True,   # True → force-flat open position on stress spike
-    "market_quality_filter":  True,   # True → block entries on stress spikes
+    "use_market_quality_filter":  True,   # True → block entries on stress spikes
 
     # ── Kill switch (Phase 3 G) ───────────────────────────────────────────────
     "kill_switch_enabled":    True,
@@ -378,7 +378,7 @@ def get_current_signals(df: pd.DataFrame) -> dict:
     if c.get("sig_volume_on", True):
         signals[f"Volume > {c['volume_sma_period']}-SMA"] = (bool(last["sig_volume"]), round(float(last["Volume"]), 0))
     if c.get("sig_volatility_on", True):
-        signals[f"Volatility < {c['volatility_max_pct']}%"] = (bool(last["sig_volatility"]), round(float(last["volatility_pct"]), 2))
+        signals[f"Annualized Volatility < {c['volatility_max_pct']}%"] = (bool(last["sig_volatility"]), round(float(last["volatility_pct"]), 2))
     if c.get("sig_adx_on", True):
         signals[f"ADX > {c['adx_min']}"] = (bool(last["sig_adx"]), round(float(last["adx"]), 2))
     if c.get("sig_ema_fast_on", True):
@@ -409,7 +409,7 @@ def get_current_signals(df: pd.DataFrame) -> dict:
         f"RSI < {c['rsi_max']}":                 "sig_rsi",
         f"Momentum > {c['momentum_min_pct']}%":  "sig_momentum",
         f"Volume > {c['volume_sma_period']}-SMA": "sig_volume",
-        f"Volatility < {c['volatility_max_pct']}%": "sig_volatility",
+        f"Annualized Volatility < {c['volatility_max_pct']}%": "sig_volatility",
         f"ADX > {c['adx_min']}":                 "sig_adx",
         f"Price > EMA {c['ema_fast']}":          "sig_ema_fast",
         f"Price > EMA {c['ema_slow']}":          "sig_ema_slow",
@@ -480,7 +480,7 @@ def apply_btc_risk_gates(row: pd.Series, config: dict, state: dict) -> dict:
     is_stress = range_val >= thresh
 
     if is_stress:
-        if config.get("market_quality_filter", False):
+        if config.get("use_market_quality_filter", False):
             allow_entry = False
             reasons.append(f"stress_spike: range_1h={range_val:.3f}")
         if config.get("stress_force_flat", False):

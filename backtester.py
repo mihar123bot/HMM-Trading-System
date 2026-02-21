@@ -5,7 +5,7 @@ Runs the regime-based HMM strategy simulation (spot-only, no leverage).
 Entry Rules
 -----------
   - HMM regime == Bull for at least MIN_REGIME_BARS consecutive bars
-  - Bucket voting gate passes (all 4 bucket minimums met)
+  - entry_signal_ok == True (built upstream; includes bucket voting via signal_ok and/or MR mode logic)
   - Not in 12-hour post-exit cooldown
   - Not blocked by risk gates (kill switch, market quality, stress cooldown)
 
@@ -158,6 +158,9 @@ def run_backtest(
     mr_down_bars: int = 2,
     mr_bounce_rsi_max: float = 45.0,
     mr_short_drop_pct: float = 0.4,
+    p_bull_min: float = 0.55,
+    # Optional: use indicators.py gate/sizing helpers (parity path)
+    use_indicator_gate_logic: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     Parameters
@@ -199,6 +202,9 @@ def run_backtest(
     result_df, trades_df, metrics
     """
     df = data.copy()
+    if use_indicator_gate_logic:
+        from indicators import apply_btc_risk_gates, compute_vol_size_multiplier
+
     required_cols = ["Open", "Close", "regime", "signal_ok"]
     df = df.dropna(subset=[c for c in required_cols if c in df.columns])
 
@@ -271,6 +277,7 @@ def run_backtest(
     entries_blocked_cooldown = 0
     entries_blocked_gate     = 0   # kill switch / market quality / stress cooldown
     entries_blocked_external = 0   # Phase 4 external gate blocks
+    entry_attempts_base      = 0   # attempts before cooldown/gate/external blocking
     exits_sl = exits_tp = exits_regime = exits_eod = exits_force_flat = exits_kill_switch = exits_trailing_sl = 0
 
     # Trailing stop and regime-flip grace state
@@ -288,20 +295,24 @@ def run_backtest(
         open_i    = float(row["Open"])
         ts        = df.index[i]
 
-        # Mean-reversion signal (quick pullback bounce setup)
+        # Mean-reversion signal (pullback then bounce)
         mr_bars = max(int(mr_down_bars), 1)
         has_window = i >= mr_bars
-        down_bars_ok = False
+        pullback_ok = False
+        bounce_ok = False
         short_drop_ok = False
         if has_window:
             recent_closes = df["Close"].iloc[i - mr_bars:i + 1].astype(float).values
-            down_bars_ok = bool(np.all(np.diff(recent_closes) < 0))
+            # pullback into bar i-1
+            pullback_ok = bool(np.all(np.diff(recent_closes[:-1]) < 0)) if len(recent_closes) > 2 else True
+            # bounce on current bar i
+            bounce_ok = bool(recent_closes[-1] > recent_closes[-2])
             start_px = float(recent_closes[0])
-            end_px = float(recent_closes[-1])
-            short_drop_ok = ((end_px - start_px) / max(start_px, 1e-9) * 100.0) <= -abs(float(mr_short_drop_pct))
+            trough_px = float(recent_closes[-2])
+            short_drop_ok = ((trough_px - start_px) / max(start_px, 1e-9) * 100.0) <= -abs(float(mr_short_drop_pct))
         has_rsi = "rsi" in row.index and not pd.isna(row.get("rsi", np.nan))
         rsi_ok = (float(row["rsi"]) <= float(mr_bounce_rsi_max)) if has_rsi else True
-        mr_signal_ok = down_bars_ok and short_drop_ok and rsi_ok
+        mr_signal_ok = pullback_ok and bounce_ok and short_drop_ok and rsi_ok
 
         mode = str(entry_mode).strip().lower()
         if mode == "trend":
@@ -315,9 +326,15 @@ def run_backtest(
         vol_i     = float(row["volatility_pct"]) if has_vol else 0.0
 
         # ── Kill switch check ──────────────────────────────────────────────
-        hwm = max(hwm, cash if not in_trade else (idle_cash + entry_equity))
+        if in_trade and entry_fill > 0:
+            m2m_equity = idle_cash + (close_i / entry_fill) * entry_equity
+            hwm = max(hwm, m2m_equity)
+            effective_equity = m2m_equity
+        else:
+            hwm = max(hwm, cash)
+            effective_equity = cash
+
         if kill_switch_enabled:
-            effective_equity = (idle_cash + close_i / entry_fill * entry_equity) if in_trade else cash
             dd_pct = (hwm - effective_equity) / hwm * 100 if hwm > 0 else 0.0
             if not kill_switch_active and dd_pct >= kill_switch_dd_pct:
                 kill_switch_active = True
@@ -334,8 +351,9 @@ def run_backtest(
         # ── Attribution: regime / p_bull / signal ─────────────────────────
         if regime == REGIME_BULL:
             bars_bull_regime += 1
-            bars_p_bull_pass += 1
-            if signal_ok:
+            if (not has_p_bull) or (p_bull_i >= float(p_bull_min)):
+                bars_p_bull_pass += 1
+            if entry_signal_ok:
                 bars_signal_ok += 1
 
         # ── Track consecutive Bull bars ────────────────────────────────────
@@ -351,10 +369,6 @@ def run_backtest(
             in_cooldown = hours_since_exit < COOLDOWN_HOURS
 
         # ── Step 1: Execute any pending fills at this bar's Open ───────────
-        if pending_exit and not in_trade:
-            pending_exit = False
-            pending_exit_reason = None
-
         if pending_exit and in_trade:
             exit_open     = open_i
             exit_fill_val = exit_open * (1 - slip_factor)
@@ -426,7 +440,15 @@ def run_backtest(
 
         if pending_entry and not in_trade:
             # Phase 3 J: vol targeting size multiplier
-            if use_vol_targeting and has_vol and vol_i > 0:
+            if use_indicator_gate_logic:
+                _size_cfg = {
+                    "vol_targeting_enabled": use_vol_targeting,
+                    "vol_target_pct": vol_target_pct,
+                    "vol_target_min_mult": vol_target_min_mult,
+                    "vol_target_max_mult": vol_target_max_mult,
+                }
+                pos_size_mult = float(compute_vol_size_multiplier(row, _size_cfg))
+            elif use_vol_targeting and has_vol and vol_i > 0:
                 pos_size_mult = float(np.clip(
                     vol_target_pct / vol_i,
                     vol_target_min_mult,
@@ -524,24 +546,42 @@ def run_backtest(
             and bull_streak >= min_regime_bars
             and entry_signal_ok
         ):
+            entry_attempts_base += 1
             blocked = False
             if in_cooldown:
                 entries_blocked_cooldown += 1
                 blocked = True
 
             if not blocked:
-                # Kill switch gate
-                if kill_switch_active and kill_switch_enabled:
-                    entries_blocked_gate += 1
-                    blocked = True
+                if use_indicator_gate_logic:
+                    _gate_cfg = {
+                        "kill_switch_enabled": kill_switch_enabled,
+                        "use_market_quality_filter": use_market_quality_filter,
+                        "stress_range_threshold": stress_range_threshold,
+                        "stress_force_flat": stress_force_flat,
+                    }
+                    _gate_state = {
+                        "kill_switch_active": kill_switch_active,
+                        "kill_switch_until": kill_switch_until,
+                        "stress_cooldown_until": stress_cooldown_until,
+                    }
+                    gate_decision = apply_btc_risk_gates(row, _gate_cfg, _gate_state)
+                    if not gate_decision.get("allow_entry", True):
+                        entries_blocked_gate += 1
+                        blocked = True
+                else:
+                    # Kill switch gate
+                    if kill_switch_active and kill_switch_enabled:
+                        entries_blocked_gate += 1
+                        blocked = True
 
-            if not blocked:
+            if not blocked and not use_indicator_gate_logic:
                 # Market quality / stress filter
                 if use_market_quality_filter and is_stress_bar:
                     entries_blocked_gate += 1
                     blocked = True
 
-            if not blocked:
+            if not blocked and not use_indicator_gate_logic:
                 # Stress cooldown
                 if stress_cooldown_until is not None and ts < stress_cooldown_until:
                     entries_blocked_gate += 1
@@ -635,19 +675,27 @@ def run_backtest(
     n_trades  = len(trades_df)
 
     # ── Waterfall ─────────────────────────────────────────────────────────────
+    attempts_after_cooldown = max(entry_attempts_base - entries_blocked_cooldown, 0)
+    attempts_after_gate = max(attempts_after_cooldown - entries_blocked_gate, 0)
+    attempts_after_external = max(attempts_after_gate - entries_blocked_external, 0)
+
     waterfall = {
-        "1_total_bars":       n,
-        "2_bull_regime":      bars_bull_regime,
-        "3_signal_ok":        bars_signal_ok,
-        "4_eligible":         bars_eligible,
-        "5_not_blocked":      bars_eligible - entries_blocked_gate - entries_blocked_external,
-        "6_entries_taken":    n_trades,
+        "1_attempt_base":          entry_attempts_base,
+        "2_blocked_cooldown":      entries_blocked_cooldown,
+        "3_after_cooldown":        attempts_after_cooldown,
+        "4_blocked_gate":          entries_blocked_gate,
+        "5_after_gate":            attempts_after_gate,
+        "6_blocked_external":      entries_blocked_external,
+        "7_not_blocked":           attempts_after_external,
+        "8_entries_taken":         n_trades,
     }
 
     attribution = {
         "bars_bull_regime":          bars_bull_regime,
+        "bars_p_bull_pass":          bars_p_bull_pass,
         "bars_signal_ok_while_bull": bars_signal_ok,
         "bars_eligible":             bars_eligible,
+        "entry_attempts_base":       entry_attempts_base,
         "entries_blocked_cooldown":  entries_blocked_cooldown,
         "entries_blocked_gate":      entries_blocked_gate,
         "entries_blocked_external":  entries_blocked_external,
@@ -659,6 +707,7 @@ def run_backtest(
         "exits_force_flat":          exits_force_flat,
         "exits_kill_switch":         exits_kill_switch,
         "pct_time_bull":             round(bars_bull_regime / max(n, 1) * 100, 1),
+        "pct_time_p_bull_pass":      round(bars_p_bull_pass / max(n, 1) * 100, 1),
         "pct_time_signal_ok":        round(bars_signal_ok   / max(n, 1) * 100, 1),
         "pct_time_eligible":         round(bars_eligible    / max(n, 1) * 100, 1),
     }
@@ -741,10 +790,10 @@ def _compute_metrics(
         if downside_std > 0 else 0.0
     )
 
-    # CVaR 95% (average of worst 5% of hourly equity returns, annualised)
+    # CVaR 95% (hourly): average of worst 5% of hourly equity returns
     if len(ret_series) > 20:
         var_05   = ret_series.quantile(0.05)
-        cvar_95  = float(ret_series[ret_series <= var_05].mean() * np.sqrt(8760) * 100)
+        cvar_95  = float(ret_series[ret_series <= var_05].mean() * 100)
     else:
         cvar_95 = 0.0
 
@@ -791,7 +840,7 @@ def _compute_metrics(
         "Max Drawdown (%)":        round(max_dd, 2),
         "Sharpe Ratio":            round(sharpe, 3),
         "Sortino Ratio":           round(sortino, 3),
-        "CVaR 95% (ann %)":        round(cvar_95, 3),
+        "CVaR 95% (hourly %)":     round(cvar_95, 3),
         "Max Consec Losses":       max_consec_losses,
         "Max Consec Wins":         max_consec_wins,
         "Worst Decile Trade (%)":  round(worst_decile, 2),
@@ -865,6 +914,6 @@ if __name__ == "__main__":
 
     # Tail metrics
     print("\n=== Tail Metrics ===")
-    for k in ["Sortino Ratio", "CVaR 95% (ann %)", "Max Consec Losses",
+    for k in ["Sortino Ratio", "CVaR 95% (hourly %)", "Max Consec Losses",
               "Worst Decile Trade (%)", "Large Loss Trades", "Time-to-Recovery (h)"]:
         print(f"  {k}: {metrics.get(k)}")

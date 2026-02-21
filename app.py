@@ -333,7 +333,13 @@ def build_sidebar() -> tuple[str, dict, dict]:
     st.sidebar.markdown("## Asset Selection")
     asset_name = st.sidebar.selectbox("Select Asset", options=list(ASSETS.keys()), index=0)
     ticker = ASSETS[asset_name]
-    if st.sidebar.button("Refresh Data & Refit Model", width="stretch"):
+    st.sidebar.toggle(
+        "Run quick calibration after refit",
+        value=False,
+        key="run_quick_cal_after_refit",
+        help="Optional: after refresh/refit, run 20-trial 1-seed calibration and auto-apply.",
+    )
+    if st.sidebar.button("Refresh Data & Refit Model", use_container_width=True):
         st.session_state["force_auto_setup"] = True
         st.cache_data.clear()
         st.rerun()
@@ -414,7 +420,7 @@ def build_sidebar() -> tuple[str, dict, dict]:
     risk["kill_switch_enabled"] = DEFAULT_CONFIG.get("kill_switch_enabled", True)
     risk["kill_switch_dd_pct"] = float(DEFAULT_CONFIG.get("kill_switch_dd_pct", 9.0))
     risk["kill_switch_cooldown_h"] = int(DEFAULT_CONFIG.get("kill_switch_cooldown_h", 24))
-    risk["use_market_quality_filter"] = DEFAULT_CONFIG.get("market_quality_filter", True)
+    risk["use_market_quality_filter"] = DEFAULT_CONFIG.get("use_market_quality_filter", True)
     risk["stress_force_flat"] = DEFAULT_CONFIG.get("stress_force_flat", True)
     risk["stress_range_threshold"] = float(DEFAULT_CONFIG.get("stress_range_threshold", 0.04))
     cfg["stress_range_threshold"] = risk["stress_range_threshold"]
@@ -475,7 +481,6 @@ def fit_hmm_cached(ticker: str):
     return with_regimes, state_stats
 
 
-@st.cache_data(ttl=1800, show_spinner=False, persist="disk")
 def run_pipeline(ticker: str, cfg: dict, risk: dict):
     raw = fetch_raw_data(ticker)
     sanity_report = run_data_sanity_checks(raw)
@@ -507,7 +512,7 @@ def run_pipeline(ticker: str, cfg: dict, risk: dict):
         stress_cooldown_hours    = risk.get("stress_cooldown_hours",   24),
         use_trailing_stop        = risk.get("use_trailing_stop",       True),
         trailing_stop_pct        = risk.get("trailing_stop_pct",       2.0),
-        trail_atr_mult           = risk.get("trail_atr_mult",          1.25),
+        trail_atr_mult           = risk.get("trail_atr_mult",          2.5),
         trail_activation_pct     = risk.get("trail_activation_pct",    1.5),
         regime_flip_grace_bars   = risk.get("regime_flip_grace_bars",  2),
         use_pbull_sizing         = risk.get("use_pbull_sizing",        False),
@@ -515,6 +520,7 @@ def run_pipeline(ticker: str, cfg: dict, risk: dict):
         mr_down_bars             = cfg.get("mr_down_bars", 2),
         mr_bounce_rsi_max        = cfg.get("mr_bounce_rsi_max", 45.0),
         mr_short_drop_pct        = cfg.get("mr_short_drop_pct", 0.4),
+        p_bull_min               = cfg.get("p_bull_min", 0.55),
     )
     current_signals = get_current_signals(full)
     return result_df, trades_df, metrics, state_stats, current_signals, sanity_report
@@ -546,7 +552,7 @@ def _run_backtest_from_regimes(with_regimes: pd.DataFrame, ticker: str, cfg: dic
         stress_cooldown_hours    = risk.get("stress_cooldown_hours", 24),
         use_trailing_stop        = risk.get("use_trailing_stop", True),
         trailing_stop_pct        = risk.get("trailing_stop_pct", 2.0),
-        trail_atr_mult           = risk.get("trail_atr_mult", 1.25),
+        trail_atr_mult           = risk.get("trail_atr_mult", 2.5),
         trail_activation_pct     = risk.get("trail_activation_pct", 1.5),
         regime_flip_grace_bars   = risk.get("regime_flip_grace_bars", 2),
         use_pbull_sizing         = risk.get("use_pbull_sizing", False),
@@ -554,6 +560,7 @@ def _run_backtest_from_regimes(with_regimes: pd.DataFrame, ticker: str, cfg: dic
         mr_down_bars             = cfg.get("mr_down_bars", 2),
         mr_bounce_rsi_max        = cfg.get("mr_bounce_rsi_max", 45.0),
         mr_short_drop_pct        = cfg.get("mr_short_drop_pct", 0.4),
+        p_bull_min               = cfg.get("p_bull_min", 0.55),
     )
 
 
@@ -563,7 +570,7 @@ CALIBRATION_SPACE = {
     "risk_min": (1, 4, 1, "int"),
     "rsi_max": (45, 80, 1, "int"),
     "momentum_min_pct": (0.0, 5.0, 0.1, "float"),
-    "volatility_max_pct": (0.2, 8.0, 0.1, "float"),
+    "volatility_max_pct": (20.0, 150.0, 1.0, "float"),
     "ema_fast": (5, 60, 1, "int"),
     "ema_slow": (40, 300, 5, "int"),
 }
@@ -589,25 +596,30 @@ def _sample_cfg_risk(base_cfg: dict, base_risk: dict, rng: np.random.Generator) 
         c["ema_slow"] = min(300, c["ema_fast"] + 20)
     return c, r
 
-def _score_metrics(m: dict, base_cfg: dict, cand_cfg: dict, base_risk: dict, cand_risk: dict) -> float:
+def _score_metrics(m: dict, base_cfg: dict, cand_cfg: dict, base_risk: dict, cand_risk: dict, sample_bars: int) -> float:
     sharpe = float(m.get("Sharpe Ratio", 0.0)); total_return = float(m.get("Total Return (%)", 0.0)); max_dd = abs(float(m.get("Max Drawdown (%)", 0.0))); trades = float(m.get("Total Trades", 0.0))
     drift = 0.0
     for k, (lo, hi, *_rest) in CALIBRATION_SPACE.items():
         drift += abs(float(cand_cfg.get(k, base_cfg.get(k, lo))) - float(base_cfg.get(k, lo))) / max(float(hi - lo), 1e-9)
     for k, (lo, hi, *_rest) in CALIBRATION_RISK_SPACE.items():
         drift += abs(float(cand_risk.get(k, base_risk.get(k, lo))) - float(base_risk.get(k, lo))) / max(float(hi - lo), 1e-9)
-    trade_penalty = (30 - trades) * 0.05 if trades < 30 else 0.0
+
+    # Trade penalty normalized to sample length (target trades per 1000 bars)
+    target_trades = max(8.0, (max(sample_bars, 1) / 1000.0) * 25.0)
+    trade_penalty = ((target_trades - trades) * 0.05) if trades < target_trades else 0.0
+
     return (1.8 * sharpe) + (0.03 * total_return) - (0.05 * max_dd) - (0.30 * drift) - trade_penalty
 
 def _calibrate_on_regimes(with_regimes: pd.DataFrame, ticker: str, cfg: dict, risk: dict, trials: int, seed: int, progress_cb=None):
     _, _, baseline_metrics = _run_backtest_from_regimes(with_regimes, ticker, cfg, risk)
+    sample_bars = len(with_regimes)
     best_cfg, best_risk, best_metrics = copy.deepcopy(cfg), copy.deepcopy(risk), baseline_metrics
-    best_score = _score_metrics(baseline_metrics, cfg, cfg, risk, risk)
+    best_score = _score_metrics(baseline_metrics, cfg, cfg, risk, risk, sample_bars)
     rng = np.random.default_rng(seed)
     for i in range(trials):
         cand_cfg, cand_risk = _sample_cfg_risk(cfg, risk, rng)
         _, _, cand_metrics = _run_backtest_from_regimes(with_regimes, ticker, cand_cfg, cand_risk)
-        cand_score = _score_metrics(cand_metrics, cfg, cand_cfg, risk, cand_risk)
+        cand_score = _score_metrics(cand_metrics, cfg, cand_cfg, risk, cand_risk, sample_bars)
         if cand_score > best_score:
             best_score, best_cfg, best_risk, best_metrics = cand_score, cand_cfg, cand_risk, cand_metrics
         if progress_cb is not None:
@@ -628,6 +640,27 @@ def _aggregate_cfg_risk_from_runs(base_cfg: dict, base_risk: dict, runs: list[di
         aligned_cfg["ema_slow"] = int(min(300, aligned_cfg["ema_fast"] + 20))
     return aligned_cfg, aligned_risk
 
+def _seed_agreement_stats(runs: list[dict]) -> tuple[float, list[dict]]:
+    if not runs:
+        return 0.0, []
+    per_param_agreement = []
+    agreement_values = []
+    for k, (lo, hi, _step, _typ) in CALIBRATION_SPACE.items():
+        vals = [float(r.get("best_cfg", {}).get(k, lo)) for r in runs]
+        span = max(vals) - min(vals) if vals else 0.0
+        width = max(float(hi - lo), 1e-9)
+        disagreement = span / width
+        agreement = max(0.0, min(1.0, 1.0 - disagreement))
+        agreement_values.append(agreement)
+        per_param_agreement.append({
+            "Parameter": k,
+            "Agreement": f"{agreement*100:.1f}%",
+            "Seed Range": f"{min(vals):.3g} → {max(vals):.3g}",
+        })
+    overall_agreement = float(np.mean(agreement_values)) if agreement_values else 0.0
+    return overall_agreement, per_param_agreement
+
+
 def run_calibration_multi_seed(ticker: str, cfg: dict, risk: dict, trials: int = 60, seeds: list[int] | None = None, progress_cb=None):
     seeds = seeds or [42, 123, 777]
     with_regimes, _ = fit_hmm_cached(ticker)
@@ -640,7 +673,7 @@ def run_calibration_multi_seed(ticker: str, cfg: dict, risk: dict, trials: int =
         runs.append(_calibrate_on_regimes(with_regimes, ticker, cfg, risk, trials, s, progress_cb=_seed_progress))
     aligned_cfg, aligned_risk = _aggregate_cfg_risk_from_runs(cfg, risk, runs)
     _, _, aligned_metrics = _run_backtest_from_regimes(with_regimes, ticker, aligned_cfg, aligned_risk)
-    aligned_score = _score_metrics(aligned_metrics, cfg, aligned_cfg, risk, aligned_risk)
+    aligned_score = _score_metrics(aligned_metrics, cfg, aligned_cfg, risk, aligned_risk, len(with_regimes))
     return {"baseline_cfg": cfg, "baseline_risk": risk, "best_cfg": aligned_cfg, "best_risk": aligned_risk, "baseline_metrics": baseline_metrics, "best_metrics": aligned_metrics, "best_score": float(aligned_score), "trials": int(trials), "seeds": [int(s) for s in seeds], "runs": runs, "generated_at_utc": datetime.utcnow().isoformat()}
 
 
@@ -664,11 +697,13 @@ def _regime_shapes(df: pd.DataFrame) -> list:
     shapes = []
     if df.empty:
         return shapes
+
     current_regime = df["regime"].iloc[0]
     start_time = df.index[0]
+
     for i in range(1, len(df)):
         regime = df["regime"].iloc[i]
-        if regime != current_regime or i == len(df) - 1:
+        if regime != current_regime:
             shapes.append(dict(
                 type="rect", xref="x", yref="paper",
                 x0=start_time, x1=df.index[i], y0=0, y1=1,
@@ -677,6 +712,15 @@ def _regime_shapes(df: pd.DataFrame) -> list:
             ))
             current_regime = regime
             start_time = df.index[i]
+
+    # Append final segment explicitly
+    shapes.append(dict(
+        type="rect", xref="x", yref="paper",
+        x0=start_time, x1=df.index[-1], y0=0, y1=1,
+        fillcolor=REGIME_COLORS.get(current_regime, "rgba(0,0,0,0)"),
+        line=dict(width=0), layer="below",
+    ))
+
     return shapes
 
 
@@ -836,7 +880,7 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 
     with col_run:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_wf = st.button("Run Walk-Forward", type="primary", width="stretch")
+        run_wf = st.button("Run Walk-Forward", type="primary", use_container_width=True)
 
     if run_wf:
         from walk_forward import run_walk_forward
@@ -942,7 +986,7 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
             data=json.dumps(snapshot_data, indent=2, default=str),
             file_name=f"wf_{wf['ticker']}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
-            width="stretch",
+            use_container_width=True,
         )
     if "Error" in lb_metrics:
         st.warning(f"Lockbox evaluation failed: {lb_metrics['Error']}")
@@ -995,7 +1039,7 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
                           "color: #ff5252" if isinstance(v, (int, float)) and v < 0 else "",
                 subset=[c for c in ["Total Return (%)", "Sharpe Ratio"] if c in fold_df.columns],
             ),
-            width="stretch", height=300,
+            use_container_width=True, height=300,
         )
 
     st.divider()
@@ -1068,20 +1112,20 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
             height=320, margin=dict(l=10, r=80, t=20, b=10),
             xaxis_title="Bars", yaxis=dict(autorange="reversed"),
         )
-        st.plotly_chart(wf_fig, width="stretch")
+        st.plotly_chart(wf_fig, use_container_width=True)
 
         wf_table = pd.DataFrame({
             "Step": list(step_labels.get(k, k) for k in last_wf),
             "Bars": wf_values,
             "% of Total": [f"{v/max(total_bars,1)*100:.1f}%" for v in wf_values],
         })
-        st.dataframe(wf_table, width="stretch", hide_index=True)
+        st.dataframe(wf_table, use_container_width=True, hide_index=True)
 
     st.divider()
 
     if not oos_df.empty and "equity" in oos_df.columns:
         st.markdown("#### OOS Equity Curve (All Test Windows Concatenated)")
-        st.plotly_chart(build_equity_chart(oos_df, "OOS Equity vs Buy & Hold"), width="stretch")
+        st.plotly_chart(build_equity_chart(oos_df, "OOS Equity vs Buy & Hold"), use_container_width=True)
 
     st.divider()
 
@@ -1090,6 +1134,14 @@ def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
     st.caption("Optimize a constrained parameter set on recent data, then inspect exactly what changed.")
 
     cal = st.session_state.get("last_calibration")
+    cal_runs = cal.get("runs", []) if cal else []
+    overall_agreement_top, _ = _seed_agreement_stats(cal_runs) if cal_runs else (0.0, [])
+    low_agreement = bool(cal_runs) and overall_agreement_top < 0.70
+
+    apply_anyway = False
+    if low_agreement:
+        st.warning(f"Low seed agreement ({overall_agreement_top*100:.1f}%). Applying calibrated params may be unstable.")
+        apply_anyway = st.checkbox("Apply anyway (danger)", value=False, key="cal_apply_anyway")
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
@@ -1120,8 +1172,8 @@ def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
         st.markdown("Apply")
         apply_clicked = st.button(
             "Apply Calibrated Parameters",
-            width="stretch",
-            disabled=cal is None,
+            use_container_width=True,
+            disabled=(cal is None) or (low_agreement and not apply_anyway),
         )
 
     if apply_clicked and cal is not None:
@@ -1131,7 +1183,7 @@ def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
         st.success("Applied calibrated parameters to the active run.")
         st.rerun()
 
-    run_clicked = st.button("Run Calibration", type="primary", width="stretch")
+    run_clicked = st.button("Run Calibration", type="primary", use_container_width=True)
 
     if run_clicked:
         selected_seeds = []
@@ -1199,25 +1251,10 @@ def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
                 "Score": round(float(r.get("best_score", 0.0)), 3),
             })
         st.markdown("#### Multi-Seed Run Summary")
-        st.dataframe(pd.DataFrame(run_rows), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(run_rows), use_container_width=True, hide_index=True)
 
         # Seed agreement score (parameter stability across runs)
-        per_param_agreement = []
-        agreement_values = []
-        for k, (lo, hi, _step, _typ) in CALIBRATION_SPACE.items():
-            vals = [float(r.get("best_cfg", {}).get(k, base_cfg.get(k, lo))) for r in runs]
-            span = max(vals) - min(vals) if vals else 0.0
-            width = max(float(hi - lo), 1e-9)
-            disagreement = span / width
-            agreement = max(0.0, min(1.0, 1.0 - disagreement))
-            agreement_values.append(agreement)
-            per_param_agreement.append({
-                "Parameter": k,
-                "Agreement": f"{agreement*100:.1f}%",
-                "Seed Range": f"{min(vals):.3g} → {max(vals):.3g}",
-            })
-
-        overall_agreement = float(np.mean(agreement_values)) if agreement_values else 0.0
+        overall_agreement, per_param_agreement = _seed_agreement_stats(runs)
         if overall_agreement >= 0.85:
             band = "High"
             band_color = "#69f0ae"
@@ -1236,7 +1273,7 @@ def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
             f"</div>",
             unsafe_allow_html=True,
         )
-        st.dataframe(pd.DataFrame(per_param_agreement), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(per_param_agreement), use_container_width=True, hide_index=True)
 
     st.markdown("#### Before vs After (Key Metrics)")
     m1, m2, m3, m4 = st.columns(4)
@@ -1300,14 +1337,14 @@ def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
         st.markdown(f"- {line}")
 
     st.markdown("#### Summary of parameter changes")
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.download_button(
         "Download Calibration Snapshot (JSON)",
         data=json.dumps(cal, indent=2, default=str),
         file_name=f"calibration_{ticker}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json",
         mime="application/json",
-        width="stretch",
+        use_container_width=True,
     )
 
 
@@ -1322,6 +1359,7 @@ def main():
     should_auto_setup = force_auto_setup
 
     if should_auto_setup:
+        run_quick_cal = bool(st.session_state.get("run_quick_cal_after_refit", False))
         splash = st.empty()
         progress = st.progress(0)
         status = st.empty()
@@ -1386,7 +1424,7 @@ def main():
         # 1) Refresh data + refit model
         _render_splash("Refreshing market data", f"Refetching and refitting model for {ticker}...")
         progress.progress(15)
-        status.caption("Step 1/3 · Data refresh + model refit")
+        status.caption(f"Step 1/{3 if run_quick_cal else 2} · Data refresh + model refit")
         fetch_raw_data(ticker)
         fit_hmm_cached(ticker)
         ts_now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -1395,28 +1433,29 @@ def main():
 
         # 2) Pull live BTC price (cached)
         _render_splash("Pulling BTC live price", "Getting latest BTC snapshot for header card...")
-        progress.progress(40)
-        status.caption("Step 2/3 · Pull BTC live price")
+        progress.progress(50 if not run_quick_cal else 40)
+        status.caption(f"Step 2/{3 if run_quick_cal else 2} · Pull BTC live price")
         fetch_live_btc_price()
 
-        # 3) Lightweight calibration and apply
-        random_seed = int(np.random.randint(1, 100000))
-        _render_splash("Running quick calibration", f"20 trials · 1 random seed ({random_seed}) · then auto-apply")
-        progress.progress(60)
-        status.caption("Step 3/3 · Calibration + apply")
-        cal = run_calibration_multi_seed(
-            ticker,
-            copy.deepcopy(cfg),
-            copy.deepcopy(risk),
-            trials=20,
-            seeds=[random_seed],
-        )
-        st.session_state["last_calibration"] = cal
-        st.session_state["last_calibration_run_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-        st.session_state["applied_calibration_cfg"] = copy.deepcopy(cal["best_cfg"])
-        st.session_state["applied_calibration_risk"] = copy.deepcopy(cal.get("best_risk", {}))
-        st.session_state["last_calibration_apply_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
-        st.session_state["auto_setup_done_for"] = ticker
+        # 3) Optional lightweight calibration and apply
+        if run_quick_cal:
+            random_seed = int(np.random.randint(1, 100000))
+            _render_splash("Running quick calibration", f"20 trials · 1 random seed ({random_seed}) · then auto-apply")
+            progress.progress(70)
+            status.caption("Step 3/3 · Calibration + apply")
+            cal = run_calibration_multi_seed(
+                ticker,
+                copy.deepcopy(cfg),
+                copy.deepcopy(risk),
+                trials=20,
+                seeds=[random_seed],
+            )
+            st.session_state["last_calibration"] = cal
+            st.session_state["last_calibration_run_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+            st.session_state["applied_calibration_cfg"] = copy.deepcopy(cal["best_cfg"])
+            st.session_state["applied_calibration_risk"] = copy.deepcopy(cal.get("best_risk", {}))
+            st.session_state["last_calibration_apply_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+
         st.session_state["force_auto_setup"] = False
 
         progress.progress(100)
@@ -1520,10 +1559,25 @@ def main():
 
         # First-principles decision summary (above signal/regime/confidence cards)
         blockers = [name for name, (ok, _) in signals_map.items() if not ok]
+
+        def _blocker_bucket(name: str) -> int:
+            trend_keys = ("Price > EMA", "MACD > Signal", "ROC(", "p_bull Slope")
+            risk_keys = ("RSI <", "Volatility <", "Momentum >", "HMM Confidence")
+            if any(k in name for k in trend_keys):
+                return 0
+            if any(k in name for k in risk_keys):
+                return 1
+            return 2
+
+        blockers_sorted = sorted(
+            blockers,
+            key=lambda n: (_blocker_bucket(n), float(pass_rates.get(n, 1000.0)), n),
+        )
+
         if is_long:
             st.success("Decision: LONG — Entry conditions are satisfied.")
         else:
-            top_blockers = blockers[:3] if blockers else ["Regime / confidence gate"]
+            top_blockers = blockers_sorted[:3] if blockers_sorted else ["Regime / confidence gate"]
             st.warning("Decision: CASH — Top blockers: " + ", ".join(top_blockers))
 
         signal_card = card(
@@ -1579,7 +1633,7 @@ def main():
             st.markdown(metric_card("LAST UPDATE", last_ts, "#8b949e", value_class="summary-metric-sub", subtext="Local time"), unsafe_allow_html=True)
 
         st.markdown("### Equity")
-        st.plotly_chart(build_equity_chart(result_df), width="stretch")
+        st.plotly_chart(build_equity_chart(result_df), use_container_width=True)
 
         st.markdown("### Recent Trade History")
         if trades_df.empty:
@@ -1591,14 +1645,14 @@ def main():
                 recent["Entry Time"] = pd.to_datetime(recent["Entry Time"]).dt.strftime("%Y-%m-%d %H:%M")
             if "Exit Time" in recent.columns:
                 recent["Exit Time"] = pd.to_datetime(recent["Exit Time"]).dt.strftime("%Y-%m-%d %H:%M")
-            st.dataframe(recent, width="stretch", hide_index=True)
+            st.dataframe(recent, use_container_width=True, hide_index=True)
 
         with st.expander("Advanced diagnostics", expanded=False):
             st.markdown(f"### {ticker} Price Chart — Regime-Shaded Background")
-            st.plotly_chart(build_chart(result_df, trades_df, cfg, ticker), width="stretch")
+            st.plotly_chart(build_chart(result_df, trades_df, cfg, ticker), use_container_width=True)
             st.markdown("### HMM State Summary")
             cleaned_state_stats = state_stats.dropna(how="all").copy()
-            st.dataframe(cleaned_state_stats, width="stretch", height=260)
+            st.dataframe(cleaned_state_stats, use_container_width=True, height=260)
 
         with st.expander("Validation snapshot (rigor checks)", expanded=False):
             b1, b2, b3, b4, b5, b6 = st.columns(6)
