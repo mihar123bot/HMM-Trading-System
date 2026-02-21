@@ -23,6 +23,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import json
 import warnings
+import copy
 
 warnings.filterwarnings("ignore")
 
@@ -86,7 +87,7 @@ st.markdown(
         font-family: 'Inter', sans-serif;
     }
     [data-testid="stAppViewContainer"] .main .block-container {
-        padding-top: 0.8rem;
+        padding-top: 0.4rem;
     }
     [data-testid="metric-container"] {
         background: var(--surface-1);
@@ -95,8 +96,22 @@ st.markdown(
         padding: var(--sp-5) 20px;
         text-align: center;
     }
+    [data-testid="metric-container"] {
+        text-align: center;
+        align-items: center;
+    }
     [data-testid="metric-container"] [data-testid="stMetricLabel"] {
         justify-content: center;
+        font-size: 0.86rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricValue"],
+    [data-testid="metric-container"] [data-testid="stMetricDelta"] {
+        justify-content: center;
+        text-align: center;
+        width: 100%;
     }
     [data-testid="metric-container"] [data-testid="stMetricValue"] {
         justify-content: center;
@@ -108,7 +123,10 @@ st.markdown(
         border-radius:50px; letter-spacing:1px;
     }
     .signal-cash {
-        display:inline-block; padding:6px 20px;
+        display:inline-block;
+        min-width:140px;
+        text-align:center;
+        padding:8px 24px;
         background:var(--bad-bg); color:var(--bad);
         font-weight:700; font-size:1rem;
         border-radius:var(--radius-sm); border:1px solid var(--bad-border);
@@ -185,7 +203,8 @@ st.markdown(
         align-items:center;
         justify-content:center;
         color:var(--text-2);
-        font-size:0.72rem;
+        font-size:0.86rem;
+        font-weight:600;
         text-transform:uppercase;
         letter-spacing:1px;
         line-height:1.1;
@@ -212,7 +231,8 @@ st.markdown(
     }
     .plain-metric-label {
         color:var(--text-2);
-        font-size:0.9rem;
+        font-size:0.86rem;
+        font-weight:600;
         text-transform:uppercase;
         letter-spacing:1px;
         line-height:1.1;
@@ -248,7 +268,8 @@ st.markdown(
     }
     .wf-metric-label {
         color:var(--text-2);
-        font-size:0.9rem;
+        font-size:0.86rem;
+        font-weight:600;
         text-transform:uppercase;
         letter-spacing:1px;
         line-height:1.1;
@@ -262,8 +283,10 @@ st.markdown(
     .main-takeaway-grid {
         display:grid;
         grid-template-columns:repeat(3, minmax(0, 1fr));
+        justify-content:center;
         gap:10px;
-        margin-bottom:4px;
+        margin:0 auto 4px auto;
+        width:100%;
     }
     .main-takeaway-card {
         background:var(--surface-1);
@@ -274,13 +297,23 @@ st.markdown(
         display:flex;
         flex-direction:column;
         justify-content:center;
+        align-items:center;
+        text-align:center;
     }
     .main-takeaway-title {
         color:var(--text-2);
         font-size:0.86rem;
+        font-weight:600;
         text-transform:uppercase;
         letter-spacing:1px;
         margin-bottom:6px;
+    }
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size:1.08rem;
+        font-weight:700;
+    }
+    div[data-testid="stNumberInput"] {
+        width: 100%;
     }
     @media (max-width: 900px) {
         .main-takeaway-grid { grid-template-columns:1fr; }
@@ -300,7 +333,8 @@ def build_sidebar() -> tuple[str, dict, dict]:
     st.sidebar.markdown("## Asset Selection")
     asset_name = st.sidebar.selectbox("Select Asset", options=list(ASSETS.keys()), index=0)
     ticker = ASSETS[asset_name]
-    if st.sidebar.button("Refresh Data & Refit Model", use_container_width=True):
+    if st.sidebar.button("Refresh Data & Refit Model", width="stretch"):
+        st.session_state["force_auto_setup"] = True
         st.cache_data.clear()
         st.rerun()
     st.sidebar.markdown("---")
@@ -311,265 +345,104 @@ def build_sidebar() -> tuple[str, dict, dict]:
     cfg  = {}
     risk = {}
 
-    # ── Voting Gate (bucket system) ───────────────────────────────────────────
-    st.sidebar.markdown("### Voting Gate")
-    st.sidebar.caption(
-        "Signals are split into 4 buckets. ALL bucket minimums must be met to enter."
-    )
-    st.sidebar.caption(
-        "Defaults: Trend min=2 (of enabled), Risk/Conditioning min=2 (of enabled), "
-        "Strength/Participation disabled."
-    )
+    strategy_mode = st.sidebar.selectbox("Mode", ["Locked", "Research"], index=0, key="strategy_mode")
+    if strategy_mode == "Locked":
+        st.sidebar.caption("Strategy controls are locked. Use Calibration Lab to tune parameters.")
+    else:
+        st.sidebar.caption("Research mode: a small set of controls is unlocked.")
 
-    with st.sidebar.expander("Trend Bucket (EMA + MACD + ROC + p_bull Slope)", expanded=True):
-        cfg["trend_min"] = st.slider(
-            "Min Trend signals (of enabled)", 0, 5, DEFAULT_CONFIG["trend_min"], 1,
-            key="trend_min",
-        )
-        st.caption("Enable/disable individual trend signals:")
-        cfg["sig_ema_fast_on"]    = st.checkbox("EMA Fast",          DEFAULT_CONFIG.get("sig_ema_fast_on",    True), key="sig_ema_fast_on")
-        cfg["sig_ema_slow_on"]    = st.checkbox("EMA Slow",          DEFAULT_CONFIG.get("sig_ema_slow_on",    True), key="sig_ema_slow_on")
-        cfg["sig_macd_on"]        = st.checkbox("MACD > Signal",     DEFAULT_CONFIG.get("sig_macd_on",        True), key="sig_macd_on")
-        cfg["sig_roc_on"]         = st.checkbox("ROC > 0",           DEFAULT_CONFIG.get("sig_roc_on",         True), key="sig_roc_on")
-        cfg["sig_pbull_slope_on"] = st.checkbox("p_bull Slope > 0",  DEFAULT_CONFIG.get("sig_pbull_slope_on", True), key="sig_pbull_slope_on")
+    # Strategy defaults (locked in sidebar)
+    cfg["trend_min"] = int(DEFAULT_CONFIG["trend_min"])
+    cfg["risk_min"] = int(DEFAULT_CONFIG["risk_min"])
+    cfg["p_bull_min"] = float(DEFAULT_CONFIG["p_bull_min"])
+    cfg["rsi_max"] = int(DEFAULT_CONFIG["rsi_max"])
+    cfg["momentum_min_pct"] = float(DEFAULT_CONFIG["momentum_min_pct"])
+    cfg["volatility_max_pct"] = float(DEFAULT_CONFIG["volatility_max_pct"])
+    cfg["ema_fast"] = int(DEFAULT_CONFIG["ema_fast"])
+    cfg["ema_slow"] = int(DEFAULT_CONFIG["ema_slow"])
 
-    # Strength/Participation removed from UI per strategy defaults.
-    # Keep explicit config values so downstream logic stays deterministic.
     cfg["strength_min"] = 0
     cfg["participation_min"] = 0
     cfg["sig_adx_on"] = False
     cfg["sig_volume_on"] = False
+    cfg["sig_ema_fast_on"] = DEFAULT_CONFIG.get("sig_ema_fast_on", True)
+    cfg["sig_ema_slow_on"] = DEFAULT_CONFIG.get("sig_ema_slow_on", True)
+    cfg["sig_macd_on"] = DEFAULT_CONFIG.get("sig_macd_on", True)
+    cfg["sig_roc_on"] = DEFAULT_CONFIG.get("sig_roc_on", True)
+    cfg["sig_pbull_slope_on"] = DEFAULT_CONFIG.get("sig_pbull_slope_on", True)
+    cfg["sig_rsi_on"] = DEFAULT_CONFIG.get("sig_rsi_on", True)
+    cfg["sig_volatility_on"] = DEFAULT_CONFIG.get("sig_volatility_on", True)
+    cfg["sig_momentum_on"] = DEFAULT_CONFIG.get("sig_momentum_on", True)
+    cfg["sig_confidence_on"] = DEFAULT_CONFIG.get("sig_confidence_on", True)
 
-    with st.sidebar.expander("Risk/Conditioning Bucket"):
-        cfg["risk_min"] = st.slider(
-            "Min Risk/Cond signals (of enabled)", 0, 4, DEFAULT_CONFIG["risk_min"], 1,
-            key="risk_min",
-        )
-        st.caption("Enable/disable individual risk signals:")
-        cfg["sig_rsi_on"]        = st.checkbox("RSI Signal",        DEFAULT_CONFIG.get("sig_rsi_on",        True), key="sig_rsi_on")
-        cfg["sig_volatility_on"] = st.checkbox("Volatility Signal", DEFAULT_CONFIG.get("sig_volatility_on", True), key="sig_volatility_on")
-        cfg["sig_momentum_on"]   = st.checkbox("Momentum Signal",   DEFAULT_CONFIG.get("sig_momentum_on",   True), key="sig_momentum_on")
-        cfg["sig_confidence_on"] = st.checkbox("HMM Confidence",    DEFAULT_CONFIG.get("sig_confidence_on", True), key="sig_confidence_on")
+    cfg["adx_min"] = int(DEFAULT_CONFIG["adx_min"])
+    cfg["rsi_period"] = int(DEFAULT_CONFIG["rsi_period"])
+    cfg["momentum_period"] = int(DEFAULT_CONFIG["momentum_period"])
+    cfg["volume_sma_period"] = int(DEFAULT_CONFIG["volume_sma_period"])
+    cfg["volatility_period"] = int(DEFAULT_CONFIG["volatility_period"])
+    cfg["adx_period"] = int(DEFAULT_CONFIG["adx_period"])
+    cfg["atr_period"] = int(DEFAULT_CONFIG["atr_period"])
+    cfg["roc_period"] = int(DEFAULT_CONFIG["roc_period"])
+    cfg["p_bull_slope_period"] = int(DEFAULT_CONFIG["p_bull_slope_period"])
+    cfg["macd_fast"] = int(DEFAULT_CONFIG["macd_fast"])
+    cfg["macd_slow"] = int(DEFAULT_CONFIG["macd_slow"])
+    cfg["macd_signal"] = int(DEFAULT_CONFIG["macd_signal"])
 
-    st.sidebar.markdown("---")
+    # Entry style defaults
+    cfg["entry_mode"] = "Hybrid"
+    cfg["mr_down_bars"] = 2
+    cfg["mr_short_drop_pct"] = 0.4
+    cfg["mr_bounce_rsi_max"] = 45
 
-    # ── HMM Confidence ────────────────────────────────────────────────────────
-    st.sidebar.markdown("### HMM Confidence")
-    st.sidebar.caption("Default: Min Bull confidence = 0.55.")
-    with st.sidebar.expander("Bull State Probability Gate"):
-        cfg["p_bull_min"] = st.slider(
-            "Min Bull confidence (p_bull ≥)", 0.0, 1.0, float(DEFAULT_CONFIG["p_bull_min"]), 0.05,
-            help="Minimum posterior probability of the Bull HMM state.",
-            key="p_bull_min",
-        )
+    # Risk defaults
+    risk["stop_loss_pct"] = -2.5
+    risk["take_profit_pct"] = 4.0
+    risk["min_regime_bars"] = 2
+    risk["regime_flip_grace_bars"] = 2
+    risk["use_pbull_sizing"] = True
+    risk["fee_bps"] = int(DEFAULT_CONFIG.get("fee_bps", 5))
+    risk["slippage_bps"] = int(DEFAULT_CONFIG.get("slippage_bps", 3))
 
-    st.sidebar.markdown("---")
+    risk["use_atr_stops"] = False
+    risk["k_stop"] = 2.0
+    risk["k_tp"] = 3.0
+    risk["use_trailing_stop"] = True
+    risk["trail_atr_mult"] = 2.5
+    risk["trail_activation_pct"] = 1.5
+    risk["trailing_stop_pct"] = 2.0
 
-    # ── Risk Management ───────────────────────────────────────────────────────
-    st.sidebar.markdown("### Risk Management")
-    st.sidebar.caption(
-        "Defaults: Stop Loss 2.5%, Take Profit 4.0%, Min Bull Bars 2, "
-        "Regime-Flip Grace 2, Scale Size by p_bull enabled."
-    )
-    sl_display = st.sidebar.slider(
-        "Stop Loss (%)", 0.5, 15.0, 2.5, 0.5,
-        help="Exit if price drops this % from entry fill price",
-    )
-    risk["stop_loss_pct"]   = -sl_display
-    risk["take_profit_pct"] = st.sidebar.slider(
-        "Take Profit (%)", 0.5, 30.0, 4.0, 0.5,
-        help="Exit if price rises this % from entry fill price",
-    )
-    risk["min_regime_bars"] = st.sidebar.slider(
-        "Min Bull Regime Bars", 1, 24, 2, 1,
-        help="Bull regime must persist N consecutive bars before entry",
-    )
-    risk["regime_flip_grace_bars"] = st.sidebar.slider(
-        "Regime-Flip Grace Period (bars)", 0, 6, 2, 1,
-        help="Allow up to N non-Bull bars before regime-flip exit fires. "
-             "0 = exit immediately on first non-Bull bar.",
-    )
-    risk["use_pbull_sizing"] = st.sidebar.toggle(
-        "Scale Size by p_bull",
-        value=True,
-        help="Multiply position size by p_bull (e.g. p_bull=0.85 → 85% size). "
-             "Composes with vol targeting.",
-    )
+    risk["kill_switch_enabled"] = DEFAULT_CONFIG.get("kill_switch_enabled", True)
+    risk["kill_switch_dd_pct"] = float(DEFAULT_CONFIG.get("kill_switch_dd_pct", 9.0))
+    risk["kill_switch_cooldown_h"] = int(DEFAULT_CONFIG.get("kill_switch_cooldown_h", 24))
+    risk["use_market_quality_filter"] = DEFAULT_CONFIG.get("market_quality_filter", True)
+    risk["stress_force_flat"] = DEFAULT_CONFIG.get("stress_force_flat", True)
+    risk["stress_range_threshold"] = float(DEFAULT_CONFIG.get("stress_range_threshold", 0.04))
+    cfg["stress_range_threshold"] = risk["stress_range_threshold"]
+    risk["stress_cooldown_hours"] = int(DEFAULT_CONFIG.get("stress_cooldown_hours", 24))
+    risk["use_vol_targeting"] = DEFAULT_CONFIG.get("vol_targeting_enabled", False)
+    risk["vol_target_pct"] = float(DEFAULT_CONFIG.get("vol_target_pct", 30.0))
+    risk["vol_target_min_mult"] = float(DEFAULT_CONFIG.get("vol_target_min_mult", 0.25))
+    risk["vol_target_max_mult"] = float(DEFAULT_CONFIG.get("vol_target_max_mult", 1.0))
 
-    st.sidebar.markdown("---")
+    if strategy_mode == "Research":
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Research Controls")
+        cfg["entry_mode"] = st.sidebar.selectbox("Entry Style", ["Trend", "Mean Reversion", "Hybrid"], index=2)
+        cfg["p_bull_min"] = st.sidebar.slider("Min Bull confidence", 0.40, 0.90, float(cfg["p_bull_min"]), 0.01)
+        cfg["trend_min"] = st.sidebar.slider("Min Trend signals", 0, 5, int(cfg["trend_min"]), 1)
+        cfg["risk_min"] = st.sidebar.slider("Min Risk/Conditioning signals", 0, 4, int(cfg["risk_min"]), 1)
+        with st.sidebar.expander("Mean Reversion", expanded=False):
+            cfg["mr_down_bars"] = st.sidebar.slider("Consecutive down bars", 1, 3, int(cfg["mr_down_bars"]), 1)
+            cfg["mr_short_drop_pct"] = st.sidebar.slider("Pullback size (%)", 0.1, 2.0, float(cfg["mr_short_drop_pct"]), 0.1)
+            cfg["mr_bounce_rsi_max"] = st.sidebar.slider("RSI cap", 25, 60, int(cfg["mr_bounce_rsi_max"]), 1)
+        with st.sidebar.expander("Risk", expanded=False):
+            sl_abs = abs(float(risk["stop_loss_pct"]))
+            risk["stop_loss_pct"] = -st.sidebar.slider("Stop Loss (%)", 0.5, 10.0, sl_abs, 0.5)
+            risk["take_profit_pct"] = st.sidebar.slider("Take Profit (%)", 1.0, 12.0, float(risk["take_profit_pct"]), 0.5)
+            risk["kill_switch_dd_pct"] = st.sidebar.slider("Kill Switch DD (%)", 4.0, 20.0, float(risk["kill_switch_dd_pct"]), 0.5)
+            risk["stress_range_threshold"] = st.sidebar.slider("Stress threshold", 0.01, 0.10, float(risk["stress_range_threshold"]), 0.005)
+            cfg["stress_range_threshold"] = risk["stress_range_threshold"]
 
-    # ── Execution Costs ───────────────────────────────────────────────────────
-    st.sidebar.markdown("### Execution Costs")
-    st.sidebar.caption("Defaults: Commission fee 5 bps/side, Slippage 3 bps/side.")
-    with st.sidebar.expander(f"Fees & Slippage (defaults for {ticker})"):
-        risk["fee_bps"] = st.slider(
-            "Commission fee (bps/side)", 0, 50, 5, 1,
-            help="1 bps = 0.01%. Applied at entry and exit.",
-        )
-        risk["slippage_bps"] = st.slider(
-            "Slippage (bps/side)", 0, 50, 3, 1,
-            help="Market impact / half-spread estimate.",
-        )
-
-    st.sidebar.markdown("---")
-
-    # ── Stop Mode ─────────────────────────────────────────────────────────────
-    st.sidebar.markdown("### Stop Mode")
-    st.sidebar.caption(
-        "Defaults: ATR-Scaled Stops disabled, Trailing Stop enabled, "
-        "trail ATR mult 2.5, activation 1.5%, fallback 2.0%."
-    )
-    risk["use_atr_stops"] = st.sidebar.toggle(
-        "Use ATR-Scaled Stops",
-        value=False,
-        help="Replace fixed % SL/TP with ATR multiples (recommended). "
-             "Adapts to current volatility; wider stops in high-vol, tighter in calm.",
-    )
-    if risk["use_atr_stops"]:
-        with st.sidebar.expander("ATR Stop Parameters", expanded=True):
-            risk["k_stop"] = st.slider("Stop Loss (ATR multiples)", 0.5, 6.0, 2.0, 0.25, key="k_stop")
-            risk["k_tp"]   = st.slider("Take Profit (ATR multiples)", 0.5, 8.0, 3.0, 0.25, key="k_tp")
-    else:
-        risk["k_stop"] = 2.0
-        risk["k_tp"]   = 3.0
-
-    risk["use_trailing_stop"] = st.sidebar.toggle(
-        "Use Trailing Stop",
-        value=True,
-        help="Trail the stop below the trade high using ATR distance (or fixed % fallback). "
-             "Only arms after the trade gains trail_activation_pct%.",
-    )
-    if risk["use_trailing_stop"]:
-        with st.sidebar.expander("Trailing Stop Parameters", expanded=True):
-            risk["trail_atr_mult"] = st.slider(
-                "Trailing Stop (ATR multiples)", 0.5, 4.0, 2.5, 0.25, key="trail_atr",
-                help="Trail level = trade_high − N × ATR. Smaller = tighter trail.",
-            )
-            risk["trail_activation_pct"] = st.slider(
-                "Activation Threshold (%)", 0.0, 5.0, 1.5, 0.25, key="trail_act",
-                help="Trailing stop only arms after the trade is this % in profit.",
-            )
-            risk["trailing_stop_pct"] = st.slider(
-                "Fixed % Trail Fallback (%)", 0.5, 15.0, 2.0, 0.25, key="trail_pct",
-                help="Used only when ATR is unavailable.",
-            )
-    else:
-        risk["trail_atr_mult"]       = 2.5
-        risk["trail_activation_pct"] = 1.5
-        risk["trailing_stop_pct"]    = 2.0
-
-    st.sidebar.markdown("---")
-
-    # ── Phase 3: Risk Gates ────────────────────────────────────────────────────
-    st.sidebar.markdown("### Risk Gates (Phase 3)")
-    st.sidebar.caption(
-        "Defaults: Kill Switch ON (DD 9%, 24h halt); Stress Filter ON "
-        "(block entries, force-flat, threshold 0.04, cooldown 24h); "
-        "Vol Targeting OFF."
-    )
-
-    with st.sidebar.expander("Kill Switch (Drawdown-Based Halt)"):
-        risk["kill_switch_enabled"] = st.checkbox(
-            "Enable Kill Switch", DEFAULT_CONFIG.get("kill_switch_enabled", True), key="kill_switch_on",
-            help="Halt all trading when rolling drawdown exceeds threshold.",
-        )
-        if risk["kill_switch_enabled"]:
-            risk["kill_switch_dd_pct"]    = st.slider("Max Drawdown Before Halt (%)",   2.0, 30.0, float(DEFAULT_CONFIG.get("kill_switch_dd_pct", 9.0)),    0.5, key="ks_dd")
-            risk["kill_switch_cooldown_h"] = st.slider("Halt Duration (hours)",          6,   168,  int(DEFAULT_CONFIG.get("kill_switch_cooldown_h", 24)),     6,   key="ks_cd")
-        else:
-            risk["kill_switch_dd_pct"]     = 9.0
-            risk["kill_switch_cooldown_h"] = 24
-
-    with st.sidebar.expander("Market Quality / Stress Filter"):
-        risk["use_market_quality_filter"] = st.checkbox(
-            "Block Entries on Stress Spikes", DEFAULT_CONFIG.get("market_quality_filter", True),
-            key="mq_filter",
-            help="Skip entry when (High-Low)/Close exceeds spike threshold.",
-        )
-        risk["stress_force_flat"] = st.checkbox(
-            "Force-Flat on Stress Spike", DEFAULT_CONFIG.get("stress_force_flat", True),
-            key="stress_ff",
-            help="Immediately exit open position when a stress spike is detected.",
-        )
-        risk["stress_range_threshold"] = st.slider(
-            "Stress Spike Threshold (range ratio)", 0.01, 0.15,
-            float(DEFAULT_CONFIG.get("stress_range_threshold", 0.04)), 0.005,
-            key="stress_thresh",
-            help="(High-Low)/Close threshold. Bars above this are 'stress spikes'.",
-        )
-        cfg["stress_range_threshold"] = risk["stress_range_threshold"]
-        risk["stress_cooldown_hours"] = st.slider(
-            "Post-Stress Entry Cooldown (hours)", 0, 72,
-            int(DEFAULT_CONFIG.get("stress_cooldown_hours", 24)), 1,
-            key="stress_cooldown",
-        )
-
-    with st.sidebar.expander("Volatility-Targeted Sizing (Phase 3 J)"):
-        risk["use_vol_targeting"] = st.checkbox(
-            "Enable Vol Targeting", DEFAULT_CONFIG.get("vol_targeting_enabled", False),
-            key="vol_tgt_on",
-            help="Scale position size so realised vol matches a target level.",
-        )
-        if risk["use_vol_targeting"]:
-            risk["vol_target_pct"]      = st.slider("Target Annualised Vol (%)",  5.0, 150.0, float(DEFAULT_CONFIG.get("vol_target_pct",      30.0)), 1.0, key="vol_tgt")
-            risk["vol_target_min_mult"] = st.slider("Min Size Multiplier",        0.1,   1.0, float(DEFAULT_CONFIG.get("vol_target_min_mult", 0.25)),  0.05, key="vol_min")
-            risk["vol_target_max_mult"] = st.slider("Max Size Multiplier",        0.5,   1.0, float(DEFAULT_CONFIG.get("vol_target_max_mult", 1.0)),   0.05, key="vol_max")
-        else:
-            risk["vol_target_pct"]      = 30.0
-            risk["vol_target_min_mult"] = 0.25
-            risk["vol_target_max_mult"] = 1.0
-
-    st.sidebar.markdown("---")
-
-    # ── Entry Thresholds ──────────────────────────────────────────────────────
-    st.sidebar.markdown("### Entry Thresholds")
-    cfg["rsi_max"]            = st.sidebar.slider(
-        f"RSI Max (< threshold) [default {DEFAULT_CONFIG['rsi_max']}]",
-        50, 100, DEFAULT_CONFIG["rsi_max"], 1
-    )
-    cfg["momentum_min_pct"]   = st.sidebar.slider(
-        f"Min Momentum (%) [default {float(DEFAULT_CONFIG['momentum_min_pct']):.1f}]",
-        0.0, 10.0, float(DEFAULT_CONFIG["momentum_min_pct"]), 0.1
-    )
-    # Phase 2 fix: BTC annualised vol is typically 40-100%. Default raised to 80%.
-    cfg["volatility_max_pct"] = st.sidebar.slider(
-        f"Max Volatility (%) [default {float(DEFAULT_CONFIG['volatility_max_pct']):.1f}]",
-        1.0, 150.0, float(DEFAULT_CONFIG["volatility_max_pct"]), 1.0,
-        help="Annualised hourly vol must be below this. BTC typical range: 40–100%. "
-             "The previous default of 6% was too restrictive for crypto.",
-    )
-    cfg["adx_min"]            = st.sidebar.slider(
-        f"Min ADX [default {DEFAULT_CONFIG['adx_min']}]",
-        10, 50, DEFAULT_CONFIG["adx_min"], 1
-    )
-
-    st.sidebar.markdown("---")
-
-    # ── Indicator Periods ─────────────────────────────────────────────────────
-    st.sidebar.markdown("### Indicator Periods")
-    cfg["rsi_period"]          = st.sidebar.slider(f"RSI Period [default {DEFAULT_CONFIG['rsi_period']}]",                5,  50, DEFAULT_CONFIG["rsi_period"],          1)
-    cfg["momentum_period"]     = st.sidebar.slider(f"Momentum Period (bars) [default {DEFAULT_CONFIG['momentum_period']}]",    2,  50, DEFAULT_CONFIG["momentum_period"],     1)
-    cfg["volume_sma_period"]   = st.sidebar.slider(f"Volume SMA Period [default {DEFAULT_CONFIG['volume_sma_period']}]",         5, 100, DEFAULT_CONFIG["volume_sma_period"],   1)
-    cfg["volatility_period"]   = st.sidebar.slider(f"Volatility Window (bars) [default {DEFAULT_CONFIG['volatility_period']}]",  6, 168, DEFAULT_CONFIG["volatility_period"],   1)
-    cfg["adx_period"]          = st.sidebar.slider(f"ADX Period [default {DEFAULT_CONFIG['adx_period']}]",                5,  50, DEFAULT_CONFIG["adx_period"],          1)
-    cfg["atr_period"]          = st.sidebar.slider(f"ATR Period [default {DEFAULT_CONFIG['atr_period']}]",                5,  50, DEFAULT_CONFIG["atr_period"],          1)
-    cfg["ema_fast"]            = st.sidebar.slider(f"EMA Fast Period [default {DEFAULT_CONFIG['ema_fast']}]",           5, 100, DEFAULT_CONFIG["ema_fast"],            1)
-    cfg["ema_slow"]            = st.sidebar.slider(f"EMA Slow Period [default {DEFAULT_CONFIG['ema_slow']}]",          20, 500, DEFAULT_CONFIG["ema_slow"],            5)
-    cfg["roc_period"]          = st.sidebar.slider(f"ROC Period (bars) [default {DEFAULT_CONFIG['roc_period']}]",         2,  48, DEFAULT_CONFIG["roc_period"],          1,
-        help="Rate-of-change lookback for sig_roc signal (faster than EMA).")
-    cfg["p_bull_slope_period"] = st.sidebar.slider(f"p_bull Slope Period (bars) [default {DEFAULT_CONFIG['p_bull_slope_period']}]",1,  12, DEFAULT_CONFIG["p_bull_slope_period"], 1,
-        help="Lookback for p_bull slope signal — detects rising HMM confidence.")
-
-    st.sidebar.markdown("---")
-
-    # ── MACD Settings ─────────────────────────────────────────────────────────
-    st.sidebar.markdown("### MACD Settings")
-    cfg["macd_fast"]   = st.sidebar.slider(f"MACD Fast [default {DEFAULT_CONFIG['macd_fast']}]",   2,  50, DEFAULT_CONFIG["macd_fast"],   1)
-    cfg["macd_slow"]   = st.sidebar.slider(f"MACD Slow [default {DEFAULT_CONFIG['macd_slow']}]",   5, 100, DEFAULT_CONFIG["macd_slow"],   1)
-    cfg["macd_signal"] = st.sidebar.slider(f"MACD Signal [default {DEFAULT_CONFIG['macd_signal']}]", 2,  30, DEFAULT_CONFIG["macd_signal"], 1)
-
-    st.sidebar.markdown("---")
-    st.sidebar.caption("Indicator defaults defined in `indicators.py → CONFIG`.")
     return ticker, cfg, risk
 
 
@@ -582,7 +455,7 @@ def fetch_raw_data(ticker: str):
     return fetch_asset_data(ticker)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False, persist="disk")
 def fetch_live_btc_price() -> float | None:
     try:
         df = fetch_asset_data("BTC-USD", days=3)
@@ -602,7 +475,7 @@ def fit_hmm_cached(ticker: str):
     return with_regimes, state_stats
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False, persist="disk")
 def run_pipeline(ticker: str, cfg: dict, risk: dict):
     raw = fetch_raw_data(ticker)
     sanity_report = run_data_sanity_checks(raw)
@@ -638,9 +511,137 @@ def run_pipeline(ticker: str, cfg: dict, risk: dict):
         trail_activation_pct     = risk.get("trail_activation_pct",    1.5),
         regime_flip_grace_bars   = risk.get("regime_flip_grace_bars",  2),
         use_pbull_sizing         = risk.get("use_pbull_sizing",        False),
+        entry_mode               = cfg.get("entry_mode", "Hybrid"),
+        mr_down_bars             = cfg.get("mr_down_bars", 2),
+        mr_bounce_rsi_max        = cfg.get("mr_bounce_rsi_max", 45.0),
+        mr_short_drop_pct        = cfg.get("mr_short_drop_pct", 0.4),
     )
     current_signals = get_current_signals(full)
     return result_df, trades_df, metrics, state_stats, current_signals, sanity_report
+
+
+def _run_backtest_from_regimes(with_regimes: pd.DataFrame, ticker: str, cfg: dict, risk: dict):
+    full = compute_indicators(with_regimes, cfg=cfg)
+    return run_backtest(
+        full,
+        ticker                   = ticker,
+        stop_loss_pct            = risk["stop_loss_pct"],
+        take_profit_pct          = risk["take_profit_pct"],
+        min_regime_bars          = risk["min_regime_bars"],
+        fee_bps                  = risk.get("fee_bps"),
+        slippage_bps             = risk.get("slippage_bps"),
+        use_atr_stops            = risk.get("use_atr_stops", False),
+        k_stop                   = risk.get("k_stop", 2.0),
+        k_tp                     = risk.get("k_tp",   3.0),
+        use_vol_targeting        = risk.get("use_vol_targeting", False),
+        vol_target_pct           = risk.get("vol_target_pct", 30.0),
+        vol_target_min_mult      = risk.get("vol_target_min_mult", 0.25),
+        vol_target_max_mult      = risk.get("vol_target_max_mult", 1.0),
+        kill_switch_enabled      = risk.get("kill_switch_enabled", True),
+        kill_switch_dd_pct       = risk.get("kill_switch_dd_pct", 9.0),
+        kill_switch_cooldown_h   = risk.get("kill_switch_cooldown_h", 24),
+        use_market_quality_filter= risk.get("use_market_quality_filter", True),
+        stress_range_threshold   = risk.get("stress_range_threshold", 0.04),
+        stress_force_flat        = risk.get("stress_force_flat", True),
+        stress_cooldown_hours    = risk.get("stress_cooldown_hours", 24),
+        use_trailing_stop        = risk.get("use_trailing_stop", True),
+        trailing_stop_pct        = risk.get("trailing_stop_pct", 2.0),
+        trail_atr_mult           = risk.get("trail_atr_mult", 1.25),
+        trail_activation_pct     = risk.get("trail_activation_pct", 1.5),
+        regime_flip_grace_bars   = risk.get("regime_flip_grace_bars", 2),
+        use_pbull_sizing         = risk.get("use_pbull_sizing", False),
+        entry_mode               = cfg.get("entry_mode", "Hybrid"),
+        mr_down_bars             = cfg.get("mr_down_bars", 2),
+        mr_bounce_rsi_max        = cfg.get("mr_bounce_rsi_max", 45.0),
+        mr_short_drop_pct        = cfg.get("mr_short_drop_pct", 0.4),
+    )
+
+
+CALIBRATION_SPACE = {
+    "p_bull_min": (0.45, 0.80, 0.01, "float"),
+    "trend_min": (1, 5, 1, "int"),
+    "risk_min": (1, 4, 1, "int"),
+    "rsi_max": (45, 80, 1, "int"),
+    "momentum_min_pct": (0.0, 5.0, 0.1, "float"),
+    "volatility_max_pct": (0.2, 8.0, 0.1, "float"),
+    "ema_fast": (5, 60, 1, "int"),
+    "ema_slow": (40, 300, 5, "int"),
+}
+CALIBRATION_RISK_SPACE = {
+    "stop_loss_pct": (-6.0, -1.0, 0.5, "float"),
+    "take_profit_pct": (2.0, 8.0, 0.5, "float"),
+    "min_regime_bars": (1, 6, 1, "int"),
+    "regime_flip_grace_bars": (0, 4, 1, "int"),
+    "kill_switch_dd_pct": (6.0, 15.0, 0.5, "float"),
+    "stress_range_threshold": (0.02, 0.08, 0.005, "float"),
+}
+
+def _sample_cfg_risk(base_cfg: dict, base_risk: dict, rng: np.random.Generator) -> tuple[dict, dict]:
+    c = copy.deepcopy(base_cfg)
+    r = copy.deepcopy(base_risk)
+    for k, (lo, hi, step, typ) in CALIBRATION_SPACE.items():
+        v = rng.choice(np.arange(lo, hi + step, step, dtype=int)) if typ == "int" else round(rng.uniform(lo, hi) / step) * step
+        c[k] = int(v) if typ == "int" else float(v)
+    for k, (lo, hi, step, typ) in CALIBRATION_RISK_SPACE.items():
+        v = rng.choice(np.arange(lo, hi + step, step, dtype=int)) if typ == "int" else round(rng.uniform(lo, hi) / step) * step
+        r[k] = int(v) if typ == "int" else float(v)
+    if c["ema_fast"] >= c["ema_slow"]:
+        c["ema_slow"] = min(300, c["ema_fast"] + 20)
+    return c, r
+
+def _score_metrics(m: dict, base_cfg: dict, cand_cfg: dict, base_risk: dict, cand_risk: dict) -> float:
+    sharpe = float(m.get("Sharpe Ratio", 0.0)); total_return = float(m.get("Total Return (%)", 0.0)); max_dd = abs(float(m.get("Max Drawdown (%)", 0.0))); trades = float(m.get("Total Trades", 0.0))
+    drift = 0.0
+    for k, (lo, hi, *_rest) in CALIBRATION_SPACE.items():
+        drift += abs(float(cand_cfg.get(k, base_cfg.get(k, lo))) - float(base_cfg.get(k, lo))) / max(float(hi - lo), 1e-9)
+    for k, (lo, hi, *_rest) in CALIBRATION_RISK_SPACE.items():
+        drift += abs(float(cand_risk.get(k, base_risk.get(k, lo))) - float(base_risk.get(k, lo))) / max(float(hi - lo), 1e-9)
+    trade_penalty = (30 - trades) * 0.05 if trades < 30 else 0.0
+    return (1.8 * sharpe) + (0.03 * total_return) - (0.05 * max_dd) - (0.30 * drift) - trade_penalty
+
+def _calibrate_on_regimes(with_regimes: pd.DataFrame, ticker: str, cfg: dict, risk: dict, trials: int, seed: int, progress_cb=None):
+    _, _, baseline_metrics = _run_backtest_from_regimes(with_regimes, ticker, cfg, risk)
+    best_cfg, best_risk, best_metrics = copy.deepcopy(cfg), copy.deepcopy(risk), baseline_metrics
+    best_score = _score_metrics(baseline_metrics, cfg, cfg, risk, risk)
+    rng = np.random.default_rng(seed)
+    for i in range(trials):
+        cand_cfg, cand_risk = _sample_cfg_risk(cfg, risk, rng)
+        _, _, cand_metrics = _run_backtest_from_regimes(with_regimes, ticker, cand_cfg, cand_risk)
+        cand_score = _score_metrics(cand_metrics, cfg, cand_cfg, risk, cand_risk)
+        if cand_score > best_score:
+            best_score, best_cfg, best_risk, best_metrics = cand_score, cand_cfg, cand_risk, cand_metrics
+        if progress_cb is not None:
+            progress_cb(i + 1, trials, seed)
+    return {"seed": int(seed), "best_cfg": best_cfg, "best_risk": best_risk, "best_metrics": best_metrics, "best_score": float(best_score)}
+
+def _aggregate_cfg_risk_from_runs(base_cfg: dict, base_risk: dict, runs: list[dict]) -> tuple[dict, dict]:
+    aligned_cfg = copy.deepcopy(base_cfg); aligned_risk = copy.deepcopy(base_risk)
+    for k, (lo, hi, step, typ) in CALIBRATION_SPACE.items():
+        vals = [float(r["best_cfg"].get(k, base_cfg.get(k, lo))) for r in runs]
+        snapped = round(min(max(float(np.median(vals)), float(lo)), float(hi)) / step) * step
+        aligned_cfg[k] = int(snapped) if typ == "int" else float(snapped)
+    for k, (lo, hi, step, typ) in CALIBRATION_RISK_SPACE.items():
+        vals = [float(r["best_risk"].get(k, base_risk.get(k, lo))) for r in runs]
+        snapped = round(min(max(float(np.median(vals)), float(lo)), float(hi)) / step) * step
+        aligned_risk[k] = int(snapped) if typ == "int" else float(snapped)
+    if aligned_cfg["ema_fast"] >= aligned_cfg["ema_slow"]:
+        aligned_cfg["ema_slow"] = int(min(300, aligned_cfg["ema_fast"] + 20))
+    return aligned_cfg, aligned_risk
+
+def run_calibration_multi_seed(ticker: str, cfg: dict, risk: dict, trials: int = 60, seeds: list[int] | None = None, progress_cb=None):
+    seeds = seeds or [42, 123, 777]
+    with_regimes, _ = fit_hmm_cached(ticker)
+    _, _, baseline_metrics = _run_backtest_from_regimes(with_regimes, ticker, cfg, risk)
+    runs = []
+    for seed_idx, s in enumerate(seeds):
+        def _seed_progress(done, total, seed_val):
+            if progress_cb is not None:
+                progress_cb((seed_idx * total) + done, len(seeds) * total, seed_val, seed_idx + 1, len(seeds))
+        runs.append(_calibrate_on_regimes(with_regimes, ticker, cfg, risk, trials, s, progress_cb=_seed_progress))
+    aligned_cfg, aligned_risk = _aggregate_cfg_risk_from_runs(cfg, risk, runs)
+    _, _, aligned_metrics = _run_backtest_from_regimes(with_regimes, ticker, aligned_cfg, aligned_risk)
+    aligned_score = _score_metrics(aligned_metrics, cfg, aligned_cfg, risk, aligned_risk)
+    return {"baseline_cfg": cfg, "baseline_risk": risk, "best_cfg": aligned_cfg, "best_risk": aligned_risk, "baseline_metrics": baseline_metrics, "best_metrics": aligned_metrics, "best_score": float(aligned_score), "trials": int(trials), "seeds": [int(s) for s in seeds], "runs": runs, "generated_at_utc": datetime.utcnow().isoformat()}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -835,7 +836,7 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 
     with col_run:
         st.markdown("<br>", unsafe_allow_html=True)
-        run_wf = st.button("Run Walk-Forward", type="primary", use_container_width=True)
+        run_wf = st.button("Run Walk-Forward", type="primary", width="stretch")
 
     if run_wf:
         from walk_forward import run_walk_forward
@@ -941,7 +942,7 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
             data=json.dumps(snapshot_data, indent=2, default=str),
             file_name=f"wf_{wf['ticker']}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
     if "Error" in lb_metrics:
         st.warning(f"Lockbox evaluation failed: {lb_metrics['Error']}")
@@ -994,7 +995,7 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
                           "color: #ff5252" if isinstance(v, (int, float)) and v < 0 else "",
                 subset=[c for c in ["Total Return (%)", "Sharpe Ratio"] if c in fold_df.columns],
             ),
-            use_container_width=True, height=300,
+            width="stretch", height=300,
         )
 
     st.divider()
@@ -1067,22 +1068,248 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
             height=320, margin=dict(l=10, r=80, t=20, b=10),
             xaxis_title="Bars", yaxis=dict(autorange="reversed"),
         )
-        st.plotly_chart(wf_fig, use_container_width=True)
+        st.plotly_chart(wf_fig, width="stretch")
 
         wf_table = pd.DataFrame({
             "Step": list(step_labels.get(k, k) for k in last_wf),
             "Bars": wf_values,
             "% of Total": [f"{v/max(total_bars,1)*100:.1f}%" for v in wf_values],
         })
-        st.dataframe(wf_table, use_container_width=True, hide_index=True)
+        st.dataframe(wf_table, width="stretch", hide_index=True)
 
     st.divider()
 
     if not oos_df.empty and "equity" in oos_df.columns:
         st.markdown("#### OOS Equity Curve (All Test Windows Concatenated)")
-        st.plotly_chart(build_equity_chart(oos_df, "OOS Equity vs Buy & Hold"), use_container_width=True)
+        st.plotly_chart(build_equity_chart(oos_df, "OOS Equity vs Buy & Hold"), width="stretch")
 
     st.divider()
+
+def render_calibration_tab(ticker: str, cfg: dict, risk: dict):
+    st.markdown("### Calibration Lab")
+    st.caption("Optimize a constrained parameter set on recent data, then inspect exactly what changed.")
+
+    cal = st.session_state.get("last_calibration")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.markdown("Trials")
+        trials = st.number_input("Trials Value", min_value=20, max_value=200, value=40, step=10, key="cal_trials", label_visibility="collapsed")
+    with c2:
+        s1a, s1b = st.columns([5, 1])
+        with s1a:
+            st.markdown("Seed 1")
+        with s1b:
+            use_seed_1 = st.checkbox("Use Seed 1", value=True, key="cal_use_seed_1", label_visibility="collapsed")
+        seed_1 = st.number_input("Seed 1 Value", min_value=1, max_value=99999, value=42, step=1, key="cal_seed_1", label_visibility="collapsed")
+    with c3:
+        s2a, s2b = st.columns([5, 1])
+        with s2a:
+            st.markdown("Seed 2")
+        with s2b:
+            use_seed_2 = st.checkbox("Use Seed 2", value=True, key="cal_use_seed_2", label_visibility="collapsed")
+        seed_2 = st.number_input("Seed 2 Value", min_value=1, max_value=99999, value=123, step=1, key="cal_seed_2", label_visibility="collapsed")
+    with c4:
+        s3a, s3b = st.columns([5, 1])
+        with s3a:
+            st.markdown("Seed 3")
+        with s3b:
+            use_seed_3 = st.checkbox("Use Seed 3", value=True, key="cal_use_seed_3", label_visibility="collapsed")
+        seed_3 = st.number_input("Seed 3 Value", min_value=1, max_value=99999, value=777, step=1, key="cal_seed_3", label_visibility="collapsed")
+    with c5:
+        st.markdown("Apply")
+        apply_clicked = st.button(
+            "Apply Calibrated Parameters",
+            width="stretch",
+            disabled=cal is None,
+        )
+
+    if apply_clicked and cal is not None:
+        st.session_state["applied_calibration_cfg"] = copy.deepcopy(cal["best_cfg"])
+        st.session_state["applied_calibration_risk"] = copy.deepcopy(cal.get("best_risk", {}))
+        st.session_state["last_calibration_apply_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        st.success("Applied calibrated parameters to the active run.")
+        st.rerun()
+
+    run_clicked = st.button("Run Calibration", type="primary", width="stretch")
+
+    if run_clicked:
+        selected_seeds = []
+        if use_seed_1:
+            selected_seeds.append(int(seed_1))
+        if use_seed_2:
+            selected_seeds.append(int(seed_2))
+        if use_seed_3:
+            selected_seeds.append(int(seed_3))
+
+        if not selected_seeds:
+            st.warning("Select at least one seed to run calibration.")
+            return
+
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
+        seed_count = len(selected_seeds)
+
+        def _progress(done, total, seed_val, seed_num, seed_total):
+            pct = int((done / max(total, 1)) * 100)
+            progress_bar.progress(min(max(pct, 0), 100))
+            progress_text.caption(
+                f"Calibrating with {seed_count} seed{'s' if seed_count != 1 else ''} (this can take several minutes) — Seed {seed_num}/{seed_total} [{seed_val}] · Overall progress: {done}/{total}"
+            )
+
+        with st.spinner(f"Calibrating with {seed_count} seed{'s' if seed_count != 1 else ''} (this can take several minutes) and aligning parameters..."):
+            cal = run_calibration_multi_seed(
+                ticker,
+                cfg,
+                risk,
+                trials=int(trials),
+                seeds=selected_seeds,
+                progress_cb=_progress,
+            )
+            st.session_state["last_calibration"] = cal
+            st.session_state["last_calibration_run_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+            progress_bar.progress(100)
+            progress_text.caption("Calibration complete.")
+            progress_bar.empty()
+            progress_text.empty()
+            st.rerun()
+
+    cal = st.session_state.get("last_calibration")
+    if not cal:
+        st.info("No calibration run yet. Click **Run Calibration**.")
+        return
+
+    base_m = cal["baseline_metrics"]
+    best_m = cal["best_metrics"]
+    base_cfg = cal["baseline_cfg"]
+    best_cfg = cal["best_cfg"]
+    base_risk = cal.get("baseline_risk", risk)
+    best_risk = cal.get("best_risk", risk)
+
+    runs = cal.get("runs", [])
+    if runs:
+        run_rows = []
+        for r in runs:
+            rm = r.get("best_metrics", {})
+            run_rows.append({
+                "Seed": r.get("seed"),
+                "Sharpe": round(float(rm.get("Sharpe Ratio", 0.0)), 3),
+                "Return (%)": round(float(rm.get("Total Return (%)", 0.0)), 2),
+                "Max DD (%)": round(float(rm.get("Max Drawdown (%)", 0.0)), 2),
+                "Score": round(float(r.get("best_score", 0.0)), 3),
+            })
+        st.markdown("#### Multi-Seed Run Summary")
+        st.dataframe(pd.DataFrame(run_rows), width="stretch", hide_index=True)
+
+        # Seed agreement score (parameter stability across runs)
+        per_param_agreement = []
+        agreement_values = []
+        for k, (lo, hi, _step, _typ) in CALIBRATION_SPACE.items():
+            vals = [float(r.get("best_cfg", {}).get(k, base_cfg.get(k, lo))) for r in runs]
+            span = max(vals) - min(vals) if vals else 0.0
+            width = max(float(hi - lo), 1e-9)
+            disagreement = span / width
+            agreement = max(0.0, min(1.0, 1.0 - disagreement))
+            agreement_values.append(agreement)
+            per_param_agreement.append({
+                "Parameter": k,
+                "Agreement": f"{agreement*100:.1f}%",
+                "Seed Range": f"{min(vals):.3g} → {max(vals):.3g}",
+            })
+
+        overall_agreement = float(np.mean(agreement_values)) if agreement_values else 0.0
+        if overall_agreement >= 0.85:
+            band = "High"
+            band_color = "#69f0ae"
+        elif overall_agreement >= 0.70:
+            band = "Medium"
+            band_color = "#ffa657"
+        else:
+            band = "Low"
+            band_color = "#ff5252"
+
+        st.markdown("#### Seed Agreement")
+        st.markdown(
+            f"<div style='background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 12px;'>"
+            f"<div style='color:#8b949e;font-size:0.82rem;text-transform:uppercase;letter-spacing:1px;'>Overall Agreement</div>"
+            f"<div style='color:{band_color};font-size:1.4rem;font-weight:800;'>{overall_agreement*100:.1f}% ({band})</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.dataframe(pd.DataFrame(per_param_agreement), width="stretch", hide_index=True)
+
+    st.markdown("#### Before vs After (Key Metrics)")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total Return", f"{best_m['Total Return (%)']:+.2f}%", delta=f"{best_m['Total Return (%)'] - base_m['Total Return (%)']:+.2f}%")
+    m2.metric("Sharpe", f"{best_m['Sharpe Ratio']:.3f}", delta=f"{best_m['Sharpe Ratio'] - base_m['Sharpe Ratio']:+.3f}")
+    m3.metric("Max DD", f"{best_m['Max Drawdown (%)']:.2f}%", delta=f"{best_m['Max Drawdown (%)'] - base_m['Max Drawdown (%)']:+.2f}%")
+    m4.metric("Trades", int(best_m.get("Total Trades", 0)), delta=int(best_m.get("Total Trades", 0) - base_m.get("Total Trades", 0)))
+
+    rows = []
+    for k in CALIBRATION_SPACE.keys():
+        before = base_cfg.get(k)
+        after = best_cfg.get(k)
+        delta = (after - before) if isinstance(before, (int, float)) and isinstance(after, (int, float)) else None
+        rows.append({"Category": "Signal", "Parameter": k, "Before": before, "After": after, "Delta": round(delta, 4) if delta is not None else "-", "Changed": "Yes" if before != after else "No"})
+    for k in CALIBRATION_RISK_SPACE.keys():
+        before = base_risk.get(k)
+        after = best_risk.get(k)
+        delta = (after - before) if isinstance(before, (int, float)) and isinstance(after, (int, float)) else None
+        rows.append({"Category": "Risk", "Parameter": k, "Before": before, "After": after, "Delta": round(delta, 4) if delta is not None else "-", "Changed": "Yes" if before != after else "No"})
+
+    improved = (best_m.get("Sharpe Ratio", 0) > base_m.get("Sharpe Ratio", 0)) and (
+        best_m.get("Max Drawdown (%)", 0) >= base_m.get("Max Drawdown (%)", 0) - 1.0
+    )
+    if improved:
+        st.success("Calibration verdict: ✅ Improved profile (higher Sharpe without materially worse drawdown).")
+    else:
+        st.warning("Calibration verdict: ⚠ Mixed result. Review changes before adopting.")
+
+    # Executive-style calibration commentary (3–5 bullets)
+    sharpe_delta = float(best_m.get("Sharpe Ratio", 0) - base_m.get("Sharpe Ratio", 0))
+    dd_delta = float(best_m.get("Max Drawdown (%)", 0) - base_m.get("Max Drawdown (%)", 0))
+    ret_delta = float(best_m.get("Total Return (%)", 0) - base_m.get("Total Return (%)", 0))
+    trades_delta = int(best_m.get("Total Trades", 0) - base_m.get("Total Trades", 0))
+
+    commentary = []
+    commentary.append(
+        f"Performance profile: Return {ret_delta:+.2f}pp, Sharpe {sharpe_delta:+.3f}, Max DD {dd_delta:+.2f}pp versus baseline."
+    )
+
+    if best_cfg.get("p_bull_min", cfg.get("p_bull_min", 0)) > base_cfg.get("p_bull_min", cfg.get("p_bull_min", 0)):
+        commentary.append("Signal quality tightened: higher confidence threshold favors cleaner entries over frequency.")
+    elif best_cfg.get("p_bull_min", cfg.get("p_bull_min", 0)) < base_cfg.get("p_bull_min", cfg.get("p_bull_min", 0)):
+        commentary.append("Signal quality loosened: lower confidence threshold increases participation and may raise churn.")
+
+    if best_cfg.get("trend_min", cfg.get("trend_min", 0)) > base_cfg.get("trend_min", cfg.get("trend_min", 0)):
+        commentary.append("Trend confirmation increased: setup now requires broader trend agreement before entry.")
+    elif best_cfg.get("trend_min", cfg.get("trend_min", 0)) < base_cfg.get("trend_min", cfg.get("trend_min", 0)):
+        commentary.append("Trend confirmation relaxed: faster entries, but with higher whipsaw risk in noisy regimes.")
+
+    if best_cfg.get("volatility_max_pct", cfg.get("volatility_max_pct", 0)) < base_cfg.get("volatility_max_pct", cfg.get("volatility_max_pct", 0)):
+        commentary.append("Risk posture is tighter: lower volatility cap filters unstable market periods.")
+    elif best_cfg.get("volatility_max_pct", cfg.get("volatility_max_pct", 0)) > base_cfg.get("volatility_max_pct", cfg.get("volatility_max_pct", 0)):
+        commentary.append("Risk posture is more permissive: wider volatility cap allows more opportunities in fast markets.")
+
+    commentary.append(
+        f"Execution intensity: trade count changed by {trades_delta:+d}; validate this aligns with desired turnover and costs."
+    )
+
+    st.markdown("#### Executive Commentary")
+    for line in commentary[:5]:
+        st.markdown(f"- {line}")
+
+    st.markdown("#### Summary of parameter changes")
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+    st.download_button(
+        "Download Calibration Snapshot (JSON)",
+        data=json.dumps(cal, indent=2, default=str),
+        file_name=f"calibration_{ticker}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json",
+        mime="application/json",
+        width="stretch",
+    )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dashboard layout
@@ -1091,14 +1318,141 @@ def render_walk_forward_tab(ticker: str, cfg: dict, risk: dict):
 def main():
     ticker, cfg, risk = build_sidebar()
 
+    force_auto_setup = bool(st.session_state.get("force_auto_setup", False))
+    should_auto_setup = force_auto_setup
+
+    if should_auto_setup:
+        splash = st.empty()
+        progress = st.progress(0)
+        status = st.empty()
+
+        def _render_splash(step_title: str, step_detail: str):
+            splash.markdown(
+                f"""
+                <style>
+                  @keyframes opiGlow {{ 0% {{ box-shadow: 0 0 0 rgba(105,240,174,0.0); }} 50% {{ box-shadow: 0 0 24px rgba(105,240,174,0.25); }} 100% {{ box-shadow: 0 0 0 rgba(105,240,174,0.0); }} }}
+                  @keyframes opiScan {{ 0% {{ transform: translateX(-100%); }} 100% {{ transform: translateX(220%); }} }}
+                  @keyframes opiTicker {{ 0% {{ transform: translateX(0%); }} 100% {{ transform: translateX(-50%); }} }}
+                  @keyframes btcRain {{ 0% {{ transform: translateY(-18px); opacity:0; }} 15% {{ opacity:0.75; }} 100% {{ transform: translateY(140px); opacity:0; }} }}
+                  .opi-boot-wrap {{
+                    position: relative;
+                    overflow: hidden;
+                    background: linear-gradient(120deg,#0f172a 0%, #111827 50%, #1f2937 100%);
+                    border: 1px solid #30363d;
+                    border-radius: 14px;
+                    padding: 16px 18px;
+                    margin: 6px 0 8px 0;
+                    animation: opiGlow 2.2s ease-in-out infinite;
+                  }}
+                  .opi-boot-wrap:before {{
+                    content: "";
+                    position: absolute;
+                    top:0; left:0;
+                    width: 40%; height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(88,166,255,0.18), transparent);
+                    animation: opiScan 2.4s linear infinite;
+                  }}
+                  .opi-topline {{ color:#8b949e;font-size:0.74rem;text-transform:uppercase;letter-spacing:1.2px; }}
+                  .opi-rain {{ position:absolute; inset:0; pointer-events:none; z-index:0; }}
+                  .opi-rain span {{ position:absolute; top:-20px; color:rgba(240,165,0,0.55); font-size:14px; animation: btcRain linear infinite; }}
+                  .opi-rain span:nth-child(1) {{ left:6%;  animation-duration:2.6s; animation-delay:0.1s; }}
+                  .opi-rain span:nth-child(2) {{ left:16%; animation-duration:3.1s; animation-delay:0.7s; }}
+                  .opi-rain span:nth-child(3) {{ left:27%; animation-duration:2.4s; animation-delay:1.2s; }}
+                  .opi-rain span:nth-child(4) {{ left:39%; animation-duration:3.4s; animation-delay:0.4s; }}
+                  .opi-rain span:nth-child(5) {{ left:52%; animation-duration:2.9s; animation-delay:1.4s; }}
+                  .opi-rain span:nth-child(6) {{ left:64%; animation-duration:3.2s; animation-delay:0.2s; }}
+                  .opi-rain span:nth-child(7) {{ left:76%; animation-duration:2.7s; animation-delay:1.0s; }}
+                  .opi-rain span:nth-child(8) {{ left:88%; animation-duration:3.0s; animation-delay:0.6s; }}
+                  .opi-title {{ color:#e6edf3;font-size:1.15rem;font-weight:800;margin-top:4px; position:relative; z-index:1; }}
+                  .opi-step {{ color:#69f0ae;font-size:0.95rem;font-weight:700;margin-top:8px; position:relative; z-index:1; }}
+                  .opi-detail {{ color:#c9d1d9;font-size:0.88rem;margin-top:3px; position:relative; z-index:1; }}
+                  .opi-meme-row {{ margin-top:10px;white-space:nowrap;overflow:hidden;border-top:1px solid rgba(139,148,158,0.2);padding-top:8px;line-height:1.35; position:relative; z-index:1; }}
+                  .opi-meme-track {{ display:inline-block; min-width:200%; animation: opiTicker 6s linear infinite; color:#f0a500; font-size:0.82rem; }}
+                </style>
+                <div class='opi-boot-wrap'>
+                  <div class='opi-rain'><span>₿</span><span>₿</span><span>₿</span><span>₿</span><span>₿</span><span>₿</span><span>₿</span><span>₿</span></div>
+                  <div class='opi-topline'>Boot Sequence · Quant Degens Online 🚀</div>
+                  <div class='opi-title'>⚡ Opi Startup Workflow</div>
+                  <div class='opi-step'>{step_title}</div>
+                  <div class='opi-detail'>{step_detail}</div>
+                  <div class='opi-meme-row'>
+                    <div class='opi-meme-track'>🐂 BULL MODE LOADING · 💎🙌 HOLD THE EDGE · 📈 GREEN CANDLES ONLY (IDEALLY) · 🧠 CALIBRATING ALPHA · 🚀 TO THE MOON? (RISK-MANAGED) · 🐂 BULL MODE LOADING · 💎🙌 HOLD THE EDGE · 📈 GREEN CANDLES ONLY (IDEALLY) · 🧠 CALIBRATING ALPHA · 🚀 TO THE MOON? (RISK-MANAGED) · 🐂 BULL MODE LOADING · 💎🙌 HOLD THE EDGE · 📈 GREEN CANDLES ONLY (IDEALLY) · 🧠 CALIBRATING ALPHA · 🚀 TO THE MOON? (RISK-MANAGED) · 🐂 BULL MODE LOADING · 💎🙌 HOLD THE EDGE · 📈 GREEN CANDLES ONLY (IDEALLY) · 🧠 CALIBRATING ALPHA · 🚀 TO THE MOON? (RISK-MANAGED) ·</div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # 1) Refresh data + refit model
+        _render_splash("Refreshing market data", f"Refetching and refitting model for {ticker}...")
+        progress.progress(15)
+        status.caption("Step 1/3 · Data refresh + model refit")
+        fetch_raw_data(ticker)
+        fit_hmm_cached(ticker)
+        ts_now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        st.session_state["last_data_refresh_ts"] = ts_now
+        st.session_state["last_model_refit_ts"] = ts_now
+
+        # 2) Pull live BTC price (cached)
+        _render_splash("Pulling BTC live price", "Getting latest BTC snapshot for header card...")
+        progress.progress(40)
+        status.caption("Step 2/3 · Pull BTC live price")
+        fetch_live_btc_price()
+
+        # 3) Lightweight calibration and apply
+        random_seed = int(np.random.randint(1, 100000))
+        _render_splash("Running quick calibration", f"20 trials · 1 random seed ({random_seed}) · then auto-apply")
+        progress.progress(60)
+        status.caption("Step 3/3 · Calibration + apply")
+        cal = run_calibration_multi_seed(
+            ticker,
+            copy.deepcopy(cfg),
+            copy.deepcopy(risk),
+            trials=20,
+            seeds=[random_seed],
+        )
+        st.session_state["last_calibration"] = cal
+        st.session_state["last_calibration_run_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        st.session_state["applied_calibration_cfg"] = copy.deepcopy(cal["best_cfg"])
+        st.session_state["applied_calibration_risk"] = copy.deepcopy(cal.get("best_risk", {}))
+        st.session_state["last_calibration_apply_ts"] = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        st.session_state["auto_setup_done_for"] = ticker
+        st.session_state["force_auto_setup"] = False
+
+        progress.progress(100)
+        status.caption("Startup workflow complete.")
+        splash.empty()
+        progress.empty()
+        status.empty()
+
+    applied_cfg = st.session_state.get("applied_calibration_cfg")
+    if applied_cfg:
+        cfg.update(applied_cfg)
+    applied_risk = st.session_state.get("applied_calibration_risk")
+    if applied_risk:
+        risk.update(applied_risk)
+
     header_left, header_right = st.columns([4, 1])
     with header_left:
         st.markdown(
             f'<h2 style="margin:0 0 0.35rem 0; padding:0; font-size:2.0rem; text-align:left;">HMM Regime-Based Trading System — {ticker}</h2>',
             unsafe_allow_html=True,
         )
+        last_refresh = st.session_state.get("last_data_refresh_ts", "Never")
+        last_refit = st.session_state.get("last_model_refit_ts", "Never")
+        last_cal_run = st.session_state.get("last_calibration_run_ts", "Never")
+        last_cal_apply = st.session_state.get("last_calibration_apply_ts", "Never")
+        st.caption(
+            f"Data refresh: {last_refresh}  •  Model refit: {last_refit}  •  Calibration run: {last_cal_run}  •  Calibration applied: {last_cal_apply}"
+        )
+        if last_cal_apply != "Never":
+            st.markdown(
+                "<span style='display:inline-block;padding:4px 10px;border:1px solid #2ea043;border-radius:999px;color:#69f0ae;font-size:0.8rem;'>Startup workflow completed</span>",
+                unsafe_allow_html=True,
+            )
     with header_right:
         btc_live = fetch_live_btc_price()
+        btc_pull_ts = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
         if btc_live is not None:
             st.markdown(
                 f'<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;'
@@ -1119,8 +1473,9 @@ def main():
                 '</div>',
                 unsafe_allow_html=True,
             )
+        st.caption(f"Live price pulled: {btc_pull_ts}")
 
-    tab_main, tab_wf = st.tabs(["Main Dashboard", "Walk-Forward Analysis"])
+    tab_main, tab_wf, tab_cal = st.tabs(["Decision", "Validation", "Calibration"])
 
     with st.spinner(f"Loading {ticker} data · Fitting HMM · Running backtest…"):
         try:
@@ -1163,6 +1518,14 @@ def main():
         else:
             confidence_html = '<span style="color:#8b949e;font-size:1.0rem;font-weight:700;">Unavailable</span>'
 
+        # First-principles decision summary (above signal/regime/confidence cards)
+        blockers = [name for name, (ok, _) in signals_map.items() if not ok]
+        if is_long:
+            st.success("Decision: LONG — Entry conditions are satisfied.")
+        else:
+            top_blockers = blockers[:3] if blockers else ["Regime / confidence gate"]
+            st.warning("Decision: CASH — Top blockers: " + ", ".join(top_blockers))
+
         signal_card = card(
             f'<div class="main-takeaway-title">Current Signal</div><div>{pill(signal_label, signal_cls)}</div>',
             class_name="main-takeaway-card",
@@ -1176,269 +1539,88 @@ def main():
             class_name="main-takeaway-card",
         )
         st.markdown(
-            f'<div class="main-takeaway-grid">{signal_card}{regime_card}{confidence_card}</div>',
+            f'<div style="display:flex;justify-content:center;width:100%;"><div class="main-takeaway-grid">{signal_card}{regime_card}{confidence_card}</div></div>',
             unsafe_allow_html=True,
         )
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Bucket voting (Trend + Risk only)
-        gate_ok    = signal_ok
-        gate_color = "#69f0ae" if gate_ok else "#ff5252"
-        gate_label = "✅ ENTRY GATE OPEN" if gate_ok else "❌ ENTRY GATE CLOSED"
-        st.markdown(
-            f'<p class="section-title">Bucket Voting Gate — '
-            f'<b style="color:{gate_color}">{gate_label}</b></p>',
-            unsafe_allow_html=True,
-        )
+        gate_ok = signal_ok
+        gate_text = "OPEN" if gate_ok else "CLOSED"
 
-        trend_signal_order = [
-            f"Price > EMA {cfg['ema_fast']}",
-            f"Price > EMA {cfg['ema_slow']}",
-            "MACD > Signal",
-            f"ROC({cfg['roc_period']}b) > 0",
-            f"p_bull Slope({cfg['p_bull_slope_period']}b) > 0",
-        ]
-        risk_signal_order = [
-            f"RSI < {cfg['rsi_max']}",
-            f"Volatility < {cfg['volatility_max_pct']}%",
-            f"Momentum > {cfg['momentum_min_pct']}%",
-            f"HMM Confidence ≥ {cfg.get('p_bull_min', 0.55)}",
-        ]
+        total_pnl = float(metrics.get("Final Equity ($)", STARTING_CAPITAL) - STARTING_CAPITAL)
+        bars_24h = 24 if len(result_df) > 24 else max(len(result_df) - 1, 1)
+        pnl_24h = float(result_df["equity"].iloc[-1] - result_df["equity"].iloc[-bars_24h]) if "equity" in result_df.columns else 0.0
+        open_trades = 1 if is_long else 0
 
-        def _render_bucket_panel(title: str, bucket_key: str, signal_labels: list[str]):
-            score, max_score, required = buckets_map.get(bucket_key, (0, 0, 0))
-            effective_min = min(required, max_score) if max_score > 0 else 0
-            passed = score >= effective_min if max_score > 0 else True
-            head_color = "#69f0ae" if passed else "#ff5252"
-            head_icon = "✅" if passed else "❌"
-            panel_bg = "#153b2a" if passed else "#3b1818"
-            panel_border = "#1f8f5f" if passed else "#8f2a2a"
-            st.markdown(
-                f'<div style="background:{panel_bg};border:1px solid {panel_border};'
-                f'border-radius:10px;padding:10px 12px;margin-bottom:8px;">'
-                f'<div style="color:#c9d1d9;font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;">{title}</div>'
-                f'<div style="color:{head_color};font-size:1.2rem;font-weight:800;">{head_icon} {score}/{max_score}</div>'
-                f'<div style="color:#c9d1d9;font-size:0.76rem;">need ≥ {effective_min}'
-                + (' (auto-pass)' if max_score == 0 else '')
-                + '</div></div>',
-                unsafe_allow_html=True,
-            )
-            with st.expander(f"{title} ({score}/{max_score})", expanded=False):
-                for name in signal_labels:
-                    if name not in signals_map:
-                        continue
-                    sig_passed, value = signals_map[name]
-                    bg = "#153b2a" if sig_passed else "#2a1616"
-                    border = "#1f8f5f" if sig_passed else "#8f2a2a"
-                    text_color = "#69f0ae" if sig_passed else "#ff8a80"
-                    rate = pass_rates.get(name)
-                    rate_str = f" · {rate:.0f}% hist" if rate is not None else ""
-                    st.markdown(
-                        f'<div style="background:{bg};border:1px solid {border};border-radius:8px;padding:8px 10px;margin-bottom:6px;">'
-                        f'<span style="color:{text_color};font-weight:700;font-size:0.82rem;">{name}</span><br>'
-                        f'<span style="color:#c9d1d9;font-size:0.76rem;">{value}{rate_str}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
+        if len(result_df):
+            ts = pd.to_datetime(result_df.index[-1], utc=True).tz_convert("America/New_York")
+            last_ts = ts.strftime("%b %d, %Y • %I:%M %p ET")
+        else:
+            last_ts = "—"
 
-        left_bucket, right_bucket = st.columns(2)
-        with left_bucket:
-            _render_bucket_panel("Trend", "Trend", trend_signal_order)
-        with right_bucket:
-            _render_bucket_panel("Risk Conditions", "Risk/Cond.", risk_signal_order)
+        total_pnl_str = f"{'+' if total_pnl >= 0 else '-'}${abs(total_pnl):,.2f}"
+        total_ret_str = f"{metrics.get('Total Return (%)', 0):+.2f}%"
+        pnl_24h_str = f"{'+' if pnl_24h >= 0 else '-'}${abs(pnl_24h):,.2f}"
+        gate_color = "#69f0ae" if gate_ok else "#ff8a80"
 
-        st.divider()
+        st.markdown("### Live Trading Overview")
+        o1, o2, o3, o4, o5 = st.columns(5)
 
-        # Performance metrics
-        st.markdown("### Historical Performance Metrics")
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        for col, label, value, help_text, value_color in [
-            (m1, "Total Return",  f"{metrics['Total Return (%)']:+.2f}%",   f"Start: ${STARTING_CAPITAL:,.0f}",
-             "#69f0ae" if metrics["Total Return (%)"] >= 0 else "#ff5252"),
-            (m2, "Win Rate",      f"{metrics['Win Rate (%)']:.1f}%",         f"{metrics['Total Trades']} trades",
-             "#69f0ae"),
-            (m3, "Alpha vs B&H",  f"{metrics['Alpha (%)']:+.2f}%",          f"B&H: {metrics['Buy & Hold Return (%)']:+.2f}%",
-             "#58a6ff"),
-            (m4, "Max Drawdown",  f"{metrics['Max Drawdown (%)']:.2f}%",     "Peak-to-trough",
-             "#ff8a80"),
-            (m5, "Sharpe Ratio",  f"{metrics['Sharpe Ratio']:.3f}",          "Annualised (hourly)",
-             "#58a6ff"),
-            (m6, "Final Equity",  f"${metrics['Final Equity ($)']:,.0f}",    "Spot position, 1×",
-             "#69f0ae"),
-        ]:
-            with col:
-                st.markdown(
-                    metric_card(
-                        label=label,
-                        value=value,
-                        value_color=value_color,
-                        label_class="plain-metric-label",
-                        value_class="plain-metric-value",
-                        card_class="plain-metric-block",
-                        subtext=help_text,
-                        sub_class="plain-metric-sub",
-                    ),
-                    unsafe_allow_html=True,
-                )
+        with o1:
+            st.markdown(metric_card("TOTAL PNL", total_pnl_str, "#69f0ae" if total_pnl >= 0 else "#ff5252", subtext=total_ret_str), unsafe_allow_html=True)
+        with o2:
+            st.markdown(metric_card("PNL (24H)", pnl_24h_str, "#69f0ae" if pnl_24h >= 0 else "#ff5252"), unsafe_allow_html=True)
+        with o3:
+            st.markdown(metric_card("OPEN TRADES", open_trades, "#58a6ff"), unsafe_allow_html=True)
+        with o4:
+            st.markdown(metric_card("ENTRY GATE", gate_text, gate_color), unsafe_allow_html=True)
+        with o5:
+            st.markdown(metric_card("LAST UPDATE", last_ts, "#8b949e", value_class="summary-metric-sub", subtext="Local time"), unsafe_allow_html=True)
 
-        with st.expander("Performance Details", expanded=False):
-            st.markdown(section_title("Tail Risk Metrics", margin_top_px=6), unsafe_allow_html=True)
-            t1, t2, t3, t4, t5, t6 = st.columns(6)
-            for col, label, value, color in [
-                (t1, "Sortino Ratio",         f"{metrics.get('Sortino Ratio', 0):.3f}",         "#69f0ae"),
-                (t2, "CVaR 95% (ann %)",      f"{metrics.get('CVaR 95% (ann %)', 0):.2f}%",     "#ff5252"),
-                (t3, "Max Consec Losses",     metrics.get("Max Consec Losses", 0),               "#ff5252"),
-                (t4, "Worst Decile Trade",    f"{metrics.get('Worst Decile Trade (%)', 0):.2f}%","#ffa657"),
-                (t5, "Large Loss Trades",     metrics.get("Large Loss Trades", 0),               "#ff5252"),
-                (t6, "Time to Recovery (h)",  metrics.get("Time-to-Recovery (h)", "N/A"),        "#8b949e"),
-            ]:
-                with col:
-                    st.markdown(metric_card(label, value, color), unsafe_allow_html=True)
+        st.markdown("### Equity")
+        st.plotly_chart(build_equity_chart(result_df), width="stretch")
 
-            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+        st.markdown("### Recent Trade History")
+        if trades_df.empty:
+            st.info("No completed trades yet.")
+        else:
+            recent_cols = [c for c in ["Entry Time", "Exit Time", "Entry Price", "Exit Price", "Return (%)", "PnL ($)", "Exit Reason"] if c in trades_df.columns]
+            recent = trades_df[recent_cols].copy().tail(10)
+            if "Entry Time" in recent.columns:
+                recent["Entry Time"] = pd.to_datetime(recent["Entry Time"]).dt.strftime("%Y-%m-%d %H:%M")
+            if "Exit Time" in recent.columns:
+                recent["Exit Time"] = pd.to_datetime(recent["Exit Time"]).dt.strftime("%Y-%m-%d %H:%M")
+            st.dataframe(recent, width="stretch", hide_index=True)
 
-            e1, e2, e3, e4, e5 = st.columns(5)
-            for col, label, value, color in [
-                (e1, "Stop Loss Exits",     metrics["Stop Loss Exits"],                  "#ff5252"),
-                (e2, "Trailing Stop Exits", metrics.get("exits_trailing_stop", 0),       "#ffa657"),
-                (e3, "Take Profit Exits",   metrics["Take Profit Exits"],                "#69f0ae"),
-                (e4, "Regime Flip Exits",   metrics["Regime Flip Exits"],                "#f0a500"),
-                (e5, "Total Fees ($)",      f"${metrics['Total Fees ($)']:,.2f}",        "#d2a8ff"),
-            ]:
-                with col:
-                    st.markdown(metric_card(label, value, color), unsafe_allow_html=True)
-
-            st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-            render_metric_color_legend()
-
-        st.divider()
-
-        st.plotly_chart(build_equity_chart(result_df), use_container_width=True)
-        st.divider()
-
-        # Candlestick chart
-        st.markdown(f"### {ticker} Price Chart — Regime-Shaded Background")
-        st.plotly_chart(build_chart(result_df, trades_df, cfg, ticker), use_container_width=True)
-
-        st.divider()
-
-        # Trade log + HMM state table
-        col_trades, col_states = st.columns([3, 2])
-
-        with col_trades:
-            st.markdown("### Trade Log")
-            if trades_df.empty:
-                st.info("No trades executed in the backtest window.")
-            else:
-                disp = trades_df.copy()
-                disp["Entry Time"] = pd.to_datetime(disp["Entry Time"]).dt.strftime("%Y-%m-%d %H:%M")
-                disp["Exit Time"]  = pd.to_datetime(disp["Exit Time"]).dt.strftime("%Y-%m-%d %H:%M")
-
-                if "Sanity Pass" in disp.columns:
-                    disp["Sanity ✓"] = disp["Sanity Pass"].map({True: "✓", False: "✗"})
-
-                preferred_cols = [
-                    "Entry Time", "Exit Time", "Entry Price", "Exit Price",
-                    "Return (%)", "PnL ($)",
-                    "Fee Entry ($)", "Fee Exit ($)",
-                    "Slippage Entry ($)", "Slippage Exit ($)",
-                    "Total Cost ($)", "Notional ($)", "Size Mult", "Sanity ✓",
-                    "Exit Reason", "Equity After ($)",
-                ]
-                fallback_cols = [
-                    "Entry Time", "Exit Time", "Entry Price", "Exit Price",
-                    "Return (%)", "PnL ($)", "Fee ($)", "Exit Reason", "Equity After ($)",
-                ]
-                has_cost_detail = "Fee Entry ($)" in disp.columns
-                display_cols = preferred_cols if has_cost_detail else fallback_cols
-                display_cols = [c for c in display_cols if c in disp.columns]
-                disp = disp[display_cols]
-
-                def _color_ret(val):
-                    return f"color: {'#69f0ae' if val > 0 else '#ff5252'}; font-weight: bold"
-
-                fmt = {
-                    "Entry Price":        "${:,.2f}",
-                    "Exit Price":         "${:,.2f}",
-                    "PnL ($)":            "${:,.2f}",
-                    "Equity After ($)":   "${:,.2f}",
-                    "Return (%)":         "{:+.2f}%",
-                    "Fee ($)":            "${:.2f}",
-                    "Fee Entry ($)":      "${:.2f}",
-                    "Fee Exit ($)":       "${:.2f}",
-                    "Slippage Entry ($)": "${:.2f}",
-                    "Slippage Exit ($)":  "${:.2f}",
-                    "Total Cost ($)":     "${:.2f}",
-                    "Notional ($)":       "${:,.0f}",
-                    "Size Mult":          "{:.3f}",
-                }
-                fmt = {k: v for k, v in fmt.items() if k in disp.columns}
-
-                styled = (
-                    disp.style
-                    .applymap(_color_ret, subset=["Return (%)", "PnL ($)"])
-                    .format(fmt)
-                )
-                st.dataframe(styled, use_container_width=True, height=340)
-                st.download_button(
-                    "Download Trade Log (CSV)",
-                    data=disp.to_csv(index=False),
-                    file_name=f"trade_log_{ticker}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                )
-                st.caption("Copy option: use the table menu (top-right) to copy cells.")
-
-                if has_cost_detail:
-                    n_fail = (trades_df.get("Sanity Pass", pd.Series([True])) == False).sum()
-                    if n_fail == 0:
-                        st.caption("✓ Fee sanity checks passed for all trades")
-                    else:
-                        st.warning(f"⚠ {n_fail} trade(s) failed fee sanity check")
-
-        with col_states:
+        with st.expander("Advanced diagnostics", expanded=False):
+            st.markdown(f"### {ticker} Price Chart — Regime-Shaded Background")
+            st.plotly_chart(build_chart(result_df, trades_df, cfg, ticker), width="stretch")
             st.markdown("### HMM State Summary")
-            st.dataframe(
-                state_stats.style.format({
-                    "Mean Return (%)": "{:+.4f}%",
-                    "Std Return (%)":  "{:.4f}%",
-                }),
-                use_container_width=True, height=340,
-            )
-            st.download_button(
-                "Download HMM State Summary (CSV)",
-                data=state_stats.to_csv(),
-                file_name=f"hmm_state_summary_{ticker}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-            st.caption("Copy option: use the table menu (top-right) to copy cells.")
+            cleaned_state_stats = state_stats.dropna(how="all").copy()
+            st.dataframe(cleaned_state_stats, width="stretch", height=260)
 
-        st.divider()
+        with st.expander("Validation snapshot (rigor checks)", expanded=False):
+            b1, b2, b3, b4, b5, b6 = st.columns(6)
+            b1.metric("Sharpe", f"{metrics.get('Sharpe Ratio', 0):.3f}")
+            b2.metric("Max DD", f"{metrics.get('Max Drawdown (%)', 0):.2f}%")
+            b3.metric("Win Rate", f"{metrics.get('Win Rate (%)', 0):.1f}%")
+            b4.metric("Trades", int(metrics.get("Total Trades", 0)))
+            b5.metric("Alpha", f"{metrics.get('Alpha (%)', 0):+.2f}%")
+            b6.metric("Sortino", f"{metrics.get('Sortino Ratio', 0):.3f}")
 
-        # Data sanity (bottom of page)
-        issues = sanity_report.get("issues", [])
-        with st.expander(
-            f"{'⚠️ Data Quality Warnings' if issues else '✅ Data Quality'} "
-            f"— {sanity_report.get('n_rows', 0):,} bars  "
-            f"{sanity_report.get('date_range', '')}",
-            expanded=bool(issues),
-        ):
-            sc1, sc2, sc3, sc4 = st.columns(4)
-            sc1.metric("Missing rows", f"{sanity_report.get('pct_missing_rows', 0):.2f}%")
-            sc2.metric("Zero-volume bars", sanity_report.get("n_zero_volume", 0))
-            sc3.metric("Range outliers (>10%)", f"{sanity_report.get('range_outlier_pct', 0):.2f}%")
-            sc4.metric("Timezone", sanity_report.get("timezone_utc", "–"))
+            trend_score = buckets_map.get("Trend", (0, 0, 0))
+            risk_score = buckets_map.get("Risk/Cond.", (0, 0, 0))
+            st.markdown("**Validation Notes**")
+            st.markdown(f"- Trend bucket: {trend_score}")
+            st.markdown(f"- Risk/Condition bucket: {risk_score}")
+            issues = sanity_report.get("issues", [])
             if issues:
-                for issue in issues:
-                    st.warning(issue)
+                st.markdown(f"- Data issues: {len(issues)} flagged")
+                for issue in issues[:3]:
+                    st.markdown(f"  - {issue}")
             else:
-                st.success("All sanity checks passed.")
-            sc5, sc6, sc7 = st.columns(3)
-            sc5.metric("Close Min", f"${sanity_report.get('close_min', 0):,.0f}")
-            sc6.metric("Close Max", f"${sanity_report.get('close_max', 0):,.0f}")
-            sc7.metric("Close Mean", f"${sanity_report.get('close_mean', 0):,.0f}")
+                st.markdown("- Data issues: none")
 
         st.divider()
         st.markdown(
@@ -1453,6 +1635,12 @@ def main():
     # ─────────────────────────────────────────────────────────────────────────
     with tab_wf:
         render_walk_forward_tab(ticker, cfg, risk)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # TAB 3 — Calibration
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_cal:
+        render_calibration_tab(ticker, cfg, risk)
 
 
 if __name__ == "__main__":

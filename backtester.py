@@ -153,6 +153,11 @@ def run_backtest(
     stress_cooldown_hours: int   = 24,
     # External gate columns (Phase 4 — if present in data)
     use_external_gates: bool = False,
+    # Mean-reversion entry controls
+    entry_mode: str = "Hybrid",  # Trend | Mean Reversion | Hybrid
+    mr_down_bars: int = 2,
+    mr_bounce_rsi_max: float = 45.0,
+    mr_short_drop_pct: float = 0.4,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     Parameters
@@ -282,6 +287,29 @@ def run_backtest(
         close_i   = float(row["Close"])
         open_i    = float(row["Open"])
         ts        = df.index[i]
+
+        # Mean-reversion signal (quick pullback bounce setup)
+        mr_bars = max(int(mr_down_bars), 1)
+        has_window = i >= mr_bars
+        down_bars_ok = False
+        short_drop_ok = False
+        if has_window:
+            recent_closes = df["Close"].iloc[i - mr_bars:i + 1].astype(float).values
+            down_bars_ok = bool(np.all(np.diff(recent_closes) < 0))
+            start_px = float(recent_closes[0])
+            end_px = float(recent_closes[-1])
+            short_drop_ok = ((end_px - start_px) / max(start_px, 1e-9) * 100.0) <= -abs(float(mr_short_drop_pct))
+        has_rsi = "rsi" in row.index and not pd.isna(row.get("rsi", np.nan))
+        rsi_ok = (float(row["rsi"]) <= float(mr_bounce_rsi_max)) if has_rsi else True
+        mr_signal_ok = down_bars_ok and short_drop_ok and rsi_ok
+
+        mode = str(entry_mode).strip().lower()
+        if mode == "trend":
+            entry_signal_ok = signal_ok
+        elif mode in ("mean reversion", "mean_reversion", "mr"):
+            entry_signal_ok = mr_signal_ok
+        else:
+            entry_signal_ok = signal_ok or mr_signal_ok
         p_bull_i  = float(row["p_bull"]) if has_p_bull else 1.0
         range_i   = float(row["range_1h"]) if has_range else 0.0
         vol_i     = float(row["volatility_pct"]) if has_vol else 0.0
@@ -494,7 +522,7 @@ def run_backtest(
             not in_trade and not pending_entry and not pending_exit
             and regime == REGIME_BULL
             and bull_streak >= min_regime_bars
-            and signal_ok
+            and entry_signal_ok
         ):
             blocked = False
             if in_cooldown:
@@ -534,7 +562,7 @@ def run_backtest(
         # ── Attribution: eligible bar ─────────────────────────────────────
         if (
             regime == REGIME_BULL
-            and signal_ok
+            and entry_signal_ok
             and not in_cooldown
             and bull_streak >= min_regime_bars
         ):
